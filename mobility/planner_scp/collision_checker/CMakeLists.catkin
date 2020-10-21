@@ -1,0 +1,27 @@
+cmake_minimum_required(VERSION 2.8)
+project(collision_checker)
+
+set(CMAKE_CXX_FLAGS "-g -Wall -Werror -std=c++11 -fPIC")
+
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${PROJECT_SOURCE_DIR}/cmake")
+
+catkin_package(
+  INCLUDE_DIRS include
+  CATKIN_DEPENDS roscpp std_msgs roslib 
+)
+
+install(DIRECTORY cmake/modules DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/cmake)
+
+find_package (Bullet REQUIRED)
+find_package (Eigen3 REQUIRED)
+find_package (Boost REQUIRED COMPONENTS system)
+
+include_directories(
+  include
+  ${catkin_INCLUDE_DIRS}
+  ${BULLET_INCLUDE_DIRS} 
+  ${EIGEN3_INCLUDE_DIR} 
+)
+
+add_executable(bullet_collision_checker src/bullet_collision_checker.cpp include/collision_checker/bullet_collision_checker.h)
+target_link_libraries(bullet_collision_checker ${catkin_LIBRARIES} ${BULLET_LIBRARIES})

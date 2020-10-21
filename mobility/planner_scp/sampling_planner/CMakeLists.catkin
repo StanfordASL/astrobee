@@ -1,0 +1,47 @@
+cmake_minimum_required(VERSION 2.8)
+project(sampling_planner)
+
+set(CMAKE_CXX_FLAGS "-g -Wall -Werror -std=c++11 -fPIC")
+
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${PROJECT_SOURCE_DIR}/cmake")
+
+catkin_package(
+  INCLUDE_DIRS include
+#  LIBRARIES rviz_visualizer
+  CATKIN_DEPENDS roscpp std_msgs roslib 
+#  DEPENDS system_lib
+)
+
+install(DIRECTORY cmake/modules DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/cmake)
+
+if (DEFINED env{GUROBI_HOME})
+find_package(GUROBI REQUIRED)
+else()
+message("NO GUROBI_HOME variable found")
+endif()
+
+
+find_package (Bullet REQUIRED)
+find_package (Eigen3 REQUIRED)
+find_package (Boost REQUIRED COMPONENTS system)
+find_package(Protobuf REQUIRED)
+
+protobuf_generate_cpp(PROTO_SRCS PROTO_HDRS protobuf/planner_fmt_protobuf.proto)
+get_filename_component(PROTO_HDR_DIR ${PROTO_HDRS} DIRECTORY)
+
+set(ProtobufIncludePath ${CMAKE_CURRENT_BINARY_DIR}
+  CACHE INTERNAL "Path to generated protobuf files.")
+
+include_directories(
+  include
+  ${catkin_INCLUDE_DIRS}
+  ${GUROBI_INCLUDE_DIRS} 
+  ${BULLET_INCLUDE_DIRS} 
+  ${EIGEN3_INCLUDE_DIR} 
+  ${PROTOBUF_INCLUDE_DIRS}
+  ${ProtobufIncludePath}
+)
+
+add_library (proto ${PROTO_HDRS} ${PROTO_SRCS})
+add_executable(sampling_planner src/mpproblem.cpp include/sampling_planner/mpproblem.h)
+target_link_libraries(opt proto ${catkin_LIBRARIES} ${GUROBI_LIBRARIES} ${BULLET_LIBRARIES} ${PROTOBUF_LIBRARIES})

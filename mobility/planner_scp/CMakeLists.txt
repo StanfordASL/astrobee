@@ -15,9 +15,8 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
-base_path: ''   # Optional, prepended to all diagnostic output
-analyzers:
-  mobility:
-    type: diagnostic_aggregator/GenericAnalyzer
-    path: 'Mobility'
-    regex: 'planner_qp|planner_scp|planner_trapezoidal|choreographer|mapper|sentinel'
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -frounding-math")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -frounding-math")
+
+add_subdirectory(scp)
+add_subdirectory(planner_scp)

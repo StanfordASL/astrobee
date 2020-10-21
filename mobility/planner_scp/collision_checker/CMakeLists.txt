@@ -15,9 +15,10 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
-base_path: ''   # Optional, prepended to all diagnostic output
-analyzers:
-  mobility:
-    type: diagnostic_aggregator/GenericAnalyzer
-    path: 'Mobility'
-    regex: 'planner_qp|planner_scp|planner_trapezoidal|choreographer|mapper|sentinel'
+cmake_minimum_required(VERSION 2.8.3)
+option(NASA "Use NASA's wonderful build system" ON)
+if(NASA)
+	include(CMakeLists.nasa)
+else()
+	include(CMakeLists.catkin)
+endif()

@@ -15,9 +15,20 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
-base_path: ''   # Optional, prepended to all diagnostic output
-analyzers:
-  mobility:
-    type: diagnostic_aggregator/GenericAnalyzer
-    path: 'Mobility'
-    regex: 'planner_qp|planner_scp|planner_trapezoidal|choreographer|mapper|sentinel'
+project(collision_checker)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -shared -fPIC")
+
+set(INCLUDES 
+  ${EIGEN3_INCLUDE_DIR}
+)
+
+create_library(TARGET collision_checker 
+  INC ${INCLUDES}
+  LIBS ${LIBS}
+  ADD_SRCS src/bullet_collision_checker.cpp
+)
+
+set(COLLISION_CHECKER_INCLUDE_DIRS
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+  PARENT_SCOPE)
+set(COLLISION_CHECKER_LIBRARIES collision_checker ${LIBS} PARENT_SCOPE)

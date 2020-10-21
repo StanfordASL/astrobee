@@ -125,6 +125,9 @@ option(ENABLE_GOOGLE_PROF
 option(ENABLE_QP
   "Enable support for the QP planner."
   ON)
+option(ENABLE_SCP
+  "Enable support for the SCP planner."
+  ON)
 option(ENABLE_PICOFLEXX
   "Enable support for building the PicoFlexx driver"
   ON)
@@ -170,6 +173,12 @@ if (TEST_COVERAGE)
     message(SEND_ERROR "Couldn't find gcov, but test coverage was opted for.")
   endif()
 endif()
+
+if (ENABLE_SCP)
+  find_package(osqp REQUIRED)
+  find_package(OsqpEigen REQUIRED)
+  find_package(Bullet REQUIRED)
+endif(ENABLE_SCP)
 
 if (ENABLE_GPROF)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pg")

@@ -25,6 +25,7 @@ catkin_package(
     sentinel
     planner_trapezoidal
     planner_qp
+    planner_scp
     docker
     ff_msgs
     ff_util

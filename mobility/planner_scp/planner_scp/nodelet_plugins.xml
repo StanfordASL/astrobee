@@ -1,0 +1,5 @@
+<library path="lib/libplanner_scp">
+  <class name="planner_scp/PlannerSCP" type="planner_scp::PlannerSCP" base_class_type="nodelet::Nodelet">
+    <description>Nodelet for mobility::planner::scp</description>
+  </class>
+</library>

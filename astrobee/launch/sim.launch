@@ -32,11 +32,11 @@
   <arg name="llp" default="local" />            <!-- LLP IP address          -->
   <arg name="mlp" default="local" />            <!-- MLP IP address          -->
   <arg name="rec" default="" />                 <!-- Record local data       -->
-  <arg name="dds" default="true" />             <!-- Enable DDS              -->
+  <arg name="dds" default="false" />             <!-- Enable DDS              -->
 
   <!-- General options -->
   <arg name="gviz" default="false" />           <!-- Start GNC visualizer    -->
-  <arg name="rviz" default="false" />           <!-- Start visualization     -->
+  <arg name="rviz" default="true" />           <!-- Start visualization     -->
   <arg name="sviz" default="false" />           <!-- Start simulation GUI    -->
   <arg name="rqt" default="false" />            <!-- Start user interface    -->
   <arg name="gds" default="false" />            <!-- Enable GDS              -->

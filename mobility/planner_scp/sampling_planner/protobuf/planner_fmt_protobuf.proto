@@ -1,0 +1,17 @@
+package planner_fmt_protobuf;
+
+message Solution_Data {
+  optional uint64 numSamples      =  1;      
+  optional uint64 xDim            =  2;
+  optional Samples samples        =  9;
+  repeated double times           = 10  [packed=true];
+  repeated double adjCosts        = 11  [packed=true];
+  repeated double nnGoEdges       = 12  [packed=true];
+  repeated double nnComeEdges     = 14  [packed=true];
+}
+
+message Samples {
+  required uint64 rows = 1;
+  required uint64 cols = 2;
+  repeated double data = 3 [packed = true];
+}

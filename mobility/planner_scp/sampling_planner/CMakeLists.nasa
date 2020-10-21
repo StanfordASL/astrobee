@@ -1,0 +1,47 @@
+# Copyright (c) 2017, United States Government, as represented by the
+# Administrator of the National Aeronautics and Space Administration.
+# 
+# All rights reserved.
+# 
+# The Astrobee platform is licensed under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with the
+# License. You may obtain a copy of the License at
+# 
+#     http://www.apache.org/licenses/LICENSE-2.0
+# 
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations
+# under the License.
+
+project(sampling_planner)
+# set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wall -Wno-deprecated-declarations -Werror=return-type -shared -fPIC")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -shared -fPIC")
+
+protobuf_generate_cpp(PROTO_SRCS PROTO_HDRS protobuf/planner_fmt_protobuf.proto)
+get_filename_component(PROTO_HDR_DIR ${PROTO_HDRS} DIRECTORY)
+
+set(INCLUDES 
+  ${GUROBI_INCLUDE_DIRS}
+  ${EIGEN3_INCLUDE_DIR}
+  ${PROTOBUF_INCLUDE_DIRS}
+  ${PROTO_HDR_DIR}
+  ${ProtobufIncludePath}
+)
+
+set(LIBS
+  ${GUROBI_LIBRARIES}
+  ${PROTOBUF_LIBRARIES}
+)
+
+create_library(TARGET sampling_planner 
+  INC ${INCLUDES}
+  LIBS ${LIBS}
+  ADD_SRCS src/mpproblem.cpp ${PROTO_SRCS}
+)
+
+set(SAMPLING_PLANNER_INCLUDE_DIRS
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+  PARENT_SCOPE)
+set(SAMPLING_PLANNER_LIBRARIES sampling_planner ${LIBS} PARENT_SCOPE)
