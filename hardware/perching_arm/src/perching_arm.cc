@@ -33,6 +33,16 @@ PerchingArm::PerchingArm()
       command_index_(0) {
   serial_.SetTimeoutCallback(std::bind(&PerchingArm::Timeout, this), 1000);
   serial_.SetShutdownCallback(std::bind(&PerchingArm::Shutdown, this));
+
+  // Initialize params for gripper
+  raw_.grip.adhesive_engage         = 0x00;
+  raw_.grip.wrist_lock              = 0x00;
+  raw_.grip.automatic_mode_enable   = 0x00;
+  raw_.grip.experiment_in_progress  = 0x00;
+  raw_.grip.file_is_open            = 0x00;
+  raw_.grip.delay_ms                = 200;    // hard coded on gripper
+  raw_.grip.read_SD = false;
+  for (size_t ii = 0; ii < 35; ii++) raw_.grip.line[ii] = '-';
 }
 
 // Connect to the arm
@@ -152,54 +162,164 @@ PerchingArmResult PerchingArm::SetDistalDisabled() {
   return SendCommand(HOST_ARM_BASIC_CMD_PAN_JOINT, ADDRESS_DISABLE, 0);
 }
 
-// Set the gripper position
-PerchingArmResult PerchingArm::SetGripperPosition(int16_t perc) {
-  std::cout << "Setting gripper position" << std::endl;
-  if (perc < GRIP_POS_MIN || perc > GRIP_POS_MAX) return RESULT_OUT_OF_BOUNDS;
-  // Get the number of encoder ticks as a percentage of the max
-  double ticks = static_cast<double>(perc) / -100.0 *
-                 static_cast<double>(raw_.grip.maximum);
-  // Send the command to open to this encoder tick value
-  return SendCommand(HOST_ARM_BASIC_CMD_DC_GRIPPER, ADDRESS_GRIPPER_SET,
-                     static_cast<int16_t>(ticks));
-}
-
-// Calibrate the gripper (warning: must be done before opening or closing the
-// gripper!)
-PerchingArmResult PerchingArm::CalibrateGripper() {
-  std::cout << "Calibrating gripper" << std::endl;
-  return SendCommand(HOST_ARM_BASIC_CMD_DC_GRIPPER, ADDRESS_GRIPPER_CALIBRATE,
-                     0);
-}
-
-// Open the gripper
 PerchingArmResult PerchingArm::OpenGripper() {
-  // If the gripper is uncalibrated, then calibrate it before allowing open
-  if (raw_.grip.maximum != -8000) return CalibrateGripper();
-  std::cout << "Opening gripper" << std::endl;
-  return SendCommand(HOST_ARM_BASIC_CMD_DC_GRIPPER, ADDRESS_GRIPPER_OPEN, 0);
+  return SendCommand(HOST_ARM_BASIC_CMD_GECKO_GRIPPER, ADDRESS_GRIPPER_OPEN, 0x00);
 }
 
-// Enable the gripper (warning: must be done before any command to the gripper,
-// which is disabled by default)
-PerchingArmResult PerchingArm::EnableGripper() {
-  std::cout << "Enabling gripper" << std::endl;
-  return SendCommand(HOST_ARM_BASIC_CMD_DC_GRIPPER, ADDRESS_GRIPPER_ENABLE, 0);
-}
-
-// Disable the gripper
-PerchingArmResult PerchingArm::DisableGripper() {
-  std::cout << "Disabling gripper" << std::endl;
-  return SendCommand(HOST_ARM_BASIC_CMD_DC_GRIPPER, ADDRESS_GRIPPER_DISABLE, 0);
-}
-
-// Close the gripper
 PerchingArmResult PerchingArm::CloseGripper() {
-  // We cannot close the gripper if it is uncalibrated
-  if (raw_.grip.maximum == 0) return RESULT_SUCCESS;
-  std::cout << "Closing gripper" << std::endl;
-  // return SendCommand(TARGET_GRIPPER, ADDRESS_GRIPPER_CLOSE, 0);
-  return SendCommand(HOST_ARM_BASIC_CMD_DC_GRIPPER, ADDRESS_GRIPPER_CLOSE, 0);
+  return SendCommand(HOST_ARM_BASIC_CMD_GECKO_GRIPPER, ADDRESS_GRIPPER_CLOSE, 0x00);
+}
+
+PerchingArmResult PerchingArm::EngageGripper() {
+  return SendCommand(HOST_ARM_BASIC_CMD_GECKO_GRIPPER, ADDRESS_GRIPPER_ENGAGE, 0x00);
+}
+
+PerchingArmResult PerchingArm::DisengageGripper() {
+  return SendCommand(HOST_ARM_BASIC_CMD_GECKO_GRIPPER, ADDRESS_GRIPPER_DISENGAGE, 0x00);
+}
+
+PerchingArmResult PerchingArm::LockGripper() {
+  return SendCommand(HOST_ARM_BASIC_CMD_GECKO_GRIPPER, ADDRESS_GRIPPER_LOCK, 0x00);
+}
+
+PerchingArmResult PerchingArm::UnlockGripper() {
+  return SendCommand(HOST_ARM_BASIC_CMD_GECKO_GRIPPER, ADDRESS_GRIPPER_UNLOCK, 0x00);
+}
+
+PerchingArmResult PerchingArm::EnableAutoGripper() {
+  return SendCommand(HOST_ARM_BASIC_CMD_GECKO_GRIPPER, ADDRESS_GRIPPER_ENABLE_AUTO, 0x00);
+}
+
+PerchingArmResult PerchingArm::DisableAutoGripper() {
+  return SendCommand(HOST_ARM_BASIC_CMD_GECKO_GRIPPER, ADDRESS_GRIPPER_DISABLE_AUTO, 0x00);
+}
+
+PerchingArmResult PerchingArm::ToggleAutoGripper() {
+  return SendCommand(HOST_ARM_BASIC_CMD_GECKO_GRIPPER, ADDRESS_GRIPPER_TOGGLE_AUTO, 0x00);
+}
+
+PerchingArmResult PerchingArm::MarkGripper(int16_t idx) {
+  int16_t IDX;
+  IDX = ((idx & 0xFF) << 8) | ((idx& 0xFF00) >> 8);
+  return SendCommand(HOST_ARM_BASIC_CMD_GECKO_GRIPPER, ADDRESS_GRIPPER_MARK, IDX);
+}
+
+PerchingArmResult PerchingArm::SetDelayGripper(int16_t delay_ms) {
+  int16_t DL;
+  DL = ((delay_ms & 0xFF) << 8) | ((delay_ms & 0xFF00) >> 8);
+  return SendCommand(HOST_ARM_BASIC_CMD_GECKO_GRIPPER, ADDRESS_GRIPPER_SET_DELAY, DL);
+}
+
+PerchingArmResult PerchingArm::OpenExperimentGripper(int16_t idx) {
+  int16_t IDX;
+  IDX = ((idx & 0xFF) << 8) | ((idx & 0xFF00) >> 8);
+  raw_.grip.read_SD = true;
+  return SendCommand(HOST_ARM_BASIC_CMD_GECKO_GRIPPER, ADDRESS_GRIPPER_OPEN_EXPERIMENT, IDX);
+}
+
+PerchingArmResult PerchingArm::NextRecordGripper(int16_t skip) {
+  int16_t SKIP;
+  SKIP = ((skip & 0xFF) << 8) | ((skip & 0xFF00) >> 8);
+  return SendCommand(HOST_ARM_BASIC_CMD_GECKO_GRIPPER, ADDRESS_GRIPPER_NEXT_RECORD, SKIP);
+}
+
+PerchingArmResult PerchingArm::SeekRecordGripper(int16_t record_num) {
+  int16_t RN;
+  RN = ((record_num & 0xFF) << 8) | ((record_num & 0xFF00) >> 8);
+  return SendCommand(HOST_ARM_BASIC_CMD_GECKO_GRIPPER, ADDRESS_GRIPPER_SEEK_RECORD, RN);
+}
+
+PerchingArmResult PerchingArm::CloseExperimentGripper() {
+  raw_.grip.read_SD = false;
+  return SendCommand(HOST_ARM_BASIC_CMD_GECKO_GRIPPER, ADDRESS_GRIPPER_CLOSE_EXPERIMENT, 0x00);
+}
+
+PerchingArmResult PerchingArm::Status() {
+  return SendCommand(HOST_ARM_BASIC_CMD_GECKO_GRIPPER, GECKO_REG_PRESENT_STATUS, 0x00);
+}
+
+PerchingArmResult PerchingArm::Record() {
+  return SendCommand(HOST_ARM_BASIC_CMD_GECKO_GRIPPER, GECKO_REG_PRESENT_RECORD, 0x00);
+}
+
+PerchingArmResult PerchingArm::ExperimentIdx() {
+  return SendCommand(HOST_ARM_BASIC_CMD_GECKO_GRIPPER, GECKO_REG_PRESENT_EXPERIMENT, 0x00);
+}
+
+PerchingArmResult PerchingArm::PresentDelay() {
+  return SendCommand(HOST_ARM_BASIC_CMD_GECKO_GRIPPER, GECKO_REG_PRESENT_DELAY, 0x00);
+}
+
+// TODO(acauligi): check method with Arul
+void PerchingArm::ConstructDataPacket(double* data, size_t len) {
+  // Check size of double and allocated memory size of data
+  if (sizeof(double) != 8 || len != 6) {
+    return;
+  }
+
+  // Clear data held inside array
+  for (size_t ii = 0; ii < sizeof(double)*len; ii++) {
+    *(reinterpret_cast<char*>(data) + ii) = 0x00;
+  }
+
+  unsigned char byte0[sizeof(double)];
+  byte0[0] = 0xFF;
+  byte0[1] = 0xFF;
+  byte0[2] = 0xFD;
+
+  if (raw_.grip.read_SD) {
+    byte0[3] = 0x01;
+  } else {
+    byte0[3] = 0x00;
+  }
+
+  byte0[4] = (raw_.grip.error_status) && 0xFF;
+  byte0[5] = (raw_.grip.error_status >> 8) && 0xFF;
+  byte0[6] = (raw_.grip.last_status_read_time) && 0xFF;
+  byte0[7] = (raw_.grip.last_status_read_time >> 8) && 0xFF;
+  *(reinterpret_cast<unsigned char*>(data+0)) = *byte0;
+
+  // Clear byte0 value
+  for (size_t jj =0; jj < sizeof(double); jj++) byte0[jj] = 0x00;
+
+  if (raw_.grip.read_SD) {
+    // Write in 35 bytes of data from SD record line
+    // First four double values use full 8 bytes (i.e. 8*4); last one stuffs only 3 bytes
+    for (size_t ii = 1; ii < len; ii++) {
+      size_t stop_len = ii = len-1 ? 3 : sizeof(double);    // for last byte0, only assign first 3 bytes
+
+      for (size_t jj = 0; jj < stop_len; jj++) {
+        byte0[jj] = raw_.grip.line[(ii-1)*sizeof(double)+jj];
+      }
+      *(reinterpret_cast<unsigned char*>(data+ii)) = *byte0;
+
+      // Clear byte0 value
+      for (size_t jj = 0; jj < sizeof(double); jj++) byte0[jj] = 0x00;
+    }
+  } else {
+    // Write in 2 bytes of status data
+    // STATUS_H = [TEMP -   -   -   -   -   - EXP]
+    byte0[0]  = (raw_.grip.overtemperature_flag << 7) | raw_.grip.experiment_in_progress;
+
+    // STATUS_L = [- FILE - - AUTO - WRIST ADH]
+    byte0[1]  = (raw_.grip.file_is_open << 5) | (raw_.grip.automatic_mode_enable << 3) |
+                (raw_.grip.wrist_lock << 1) | raw_.grip.adhesive_engage;
+
+    *(reinterpret_cast<unsigned char*>(data+1)) = *byte0;
+
+    // Clear byte0 value
+    for (size_t jj =0; jj < sizeof(double); jj++) byte0[jj] = 0x00;
+
+    // Fill out rest of data values with 0x00
+    for (size_t jj = 2; jj < len; jj++) {
+      *(reinterpret_cast<unsigned char*>(data+jj)) = *byte0;
+    }
+  }
+
+  // Clear currently stored experiment line
+  for (size_t ii = 0; ii < 35; ii++) {
+    raw_.grip.line[ii] = '-';
+  }
 }
 
 // Reset the software
@@ -253,15 +373,77 @@ PerchingArmResult PerchingArm::SendCommand(uint8_t target, int16_t address,
   return RESULT_SUCCESS;
 }
 
-void PerchingArm::ProcessGripperStateTelemetry(
-    const host_arm_dc_gripper_state_telemetry_t *packet) {
-  if (uncalibrated_
-    && (packet->motor_flags & HOST_ARM_DC_GRIPPER_FLAG_CALIBRATED)) {
-    uncalibrated_ = false;
-    raw_.grip.maximum = -8000;
+void PerchingArm::ProcessGeckoGripperStateTelemetry(
+    const host_gecko_gripper_state_telemetry_t *packet) {
+
+  // TODO(acauligi): Anyway to retain backwards compatibility here?
+  raw_.grip.error_status            = packet->error_status;
+  uint8_t err;
+  if (raw_.grip.error_status && 0x80) {
+    // Check if first bit is 1
+    err = raw_.grip.error_status & 0x7F;
+    switch (err) {
+      case perching_arm::ERR_RESULT:
+        std::cout << "Result Fail" << std::endl;
+      case perching_arm::ERR_INSTR:
+        std::cout << "Instruction Fail" << std::endl;
+      case perching_arm::ERR_CRC:
+        std::cout << "CRC Error" << std::endl;
+      case perching_arm::ERR_DATA_RANGE:
+        std::cout << "Data Range Error" << std::endl;
+      case perching_arm::ERR_DATA_LEN:
+        std::cout << "Data Length Error" << std::endl;
+      case perching_arm::ERR_DATA_LIM:
+      std::cout << "Data Limit Error" << std::endl;
+      case perching_arm::ERR_ACCESS:
+        std::cout << "Access Error" << std::endl;
+      case perching_arm::ERR_INSTR_READ:
+        std::cout << "Instruction Read Error" << std::endl;
+      case perching_arm::ERR_INSTR_WRITE:
+        std::cout << "Instruction Write Error" << std::endl;
+      case perching_arm::ERR_TOF_INIT:
+        std::cout << "TOF Init Error" << std::endl;
+      case perching_arm::ERR_TOF_READ:
+        std::cout << "TOF Read Error" << std::endl;
+      case perching_arm::ERR_SD_INIT:
+        std::cout << "SD Init Error" << std::endl;
+      case perching_arm::ERR_SD_OPEN:
+        std::cout << "SD Open Error" << std::endl;
+      case perching_arm::ERR_SD_WRITE:
+        std::cout << "SD Write Error" << std::endl;
+      case perching_arm::ERR_SD_READ:
+        std::cout << "SD Read Error" << std::endl;
+      default:
+        std::cout << "Unrecognized error flag!" << std::endl;
+        break;
+    }
+  } else {
+    // If first bit = 0, ignore trailing bits
+    err = 0x00;
   }
-  raw_.grip.position = packet->gripper_tick;  // unit: unknown
-  raw_.grip.load = packet->avg_current;       // unit: 6.138mA
+  err = raw_.grip.error_status & 0x7F;
+
+  raw_.grip.last_status_read_time   = packet->last_status_read_time;  // time since gripper was polled
+  raw_.grip.adhesive_engage         = packet->adhesive_engage;  // bit for adhesive engage/disengage
+  raw_.grip.wrist_lock              = packet->wrist_lock;  // bit for wrist lock/unlock
+  raw_.grip.automatic_mode_enable   = packet->automatic_mode_enable;  // bit for automatic mode enable/disable
+  raw_.grip.experiment_in_progress  = packet->experiment_in_progress;  // bit to indicate experiment in progress
+  raw_.grip.overtemperature_flag    = packet->overtemperature_flag;  // bit to indicate overtemperature
+
+  raw_.grip.file_is_open            = packet->file_is_open;
+  raw_.grip.exp_idx                 = packet->exp_idx;
+  raw_.grip.delay_ms                = packet->delay_ms;
+}
+
+void PerchingArm::ProcessSDCardStateTelemetry(
+    const host_sd_card_state_telemetry_t *packet) {
+  std::cout << "Received SD card packet:" << std::endl;
+  std::cout << std::endl;
+  for (size_t ii = 0; ii < 35; ii++) {
+    raw_.grip.line[ii] = packet->line[ii];
+    std::cout << raw_.grip.line[ii];
+  }
+  std::cout << std::endl;
 }
 
 void PerchingArm::ProcessServoJointStateTelemetry(
@@ -316,10 +498,6 @@ void PerchingArm::Process(const uint8_t *buffer) {
   }
 
   switch (prefix->type) {
-    case HOST_ARM_TELEMETRY_DC_GRIPPER_STATE:
-      ProcessGripperStateTelemetry(
-          (const host_arm_dc_gripper_state_telemetry_t *)buffer);
-      break;
     case HOST_ARM_TELEMETRY_SERVO_JOINT_STATE:
       ProcessServoJointStateTelemetry(
           (const host_arm_servo_joint_state_telemetry_t *)buffer);
@@ -327,6 +505,14 @@ void PerchingArm::Process(const uint8_t *buffer) {
     case HOST_ARM_TELEMETRY_SERVO_JOINT_STATUS:
       ProcessServoJointStatusTelemetry(
           (const host_arm_servo_joint_status_telemetry_t *)buffer);
+      break;
+    case HOST_ARM_TELEMETRY_GECKO_GRIPPER_STATE :
+      ProcessGeckoGripperStateTelemetry(
+          (const host_gecko_gripper_state_telemetry_t*)buffer);
+      break;
+    case HOST_ARM_TELEMETRY_SD_CARD_STATE :
+      ProcessSDCardStateTelemetry(
+          (const host_sd_card_state_telemetry_t*)buffer);
       break;
     case HOST_ARM_TELEMETRY_BOARD_STATE:
       ProcessBoardStateTelemetry(

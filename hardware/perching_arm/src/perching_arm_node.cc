@@ -30,7 +30,6 @@
 
 // Specific arm services
 #include <ff_hw_msgs/SetEnabled.h>
-#include <ff_hw_msgs/CalibrateGripper.h>
 #include <ff_hw_msgs/SetJointMaxVelocity.h>
 
 // interface class
@@ -124,9 +123,6 @@ class PerchingArmNode : public ff_util::FreeFlyerNodelet {
             NODELET_FATAL_STREAM("Could not send configuration " << j);
         }
 
-        // Force an enable of the gripper
-        arm_.EnableGripper();
-
         // Create a joint state publisher for the arm, which matches the
         // structure expected by the robot_state publisher
         pub_ =
@@ -157,18 +153,6 @@ class PerchingArmNode : public ff_util::FreeFlyerNodelet {
                                  &PerchingArmNode::EnableDistalServoCallback,
                                  this);
 
-        // Enable/Disable the Gripper Servo
-        srv_gs_ =
-            nh->advertiseService(SERVICE_HARDWARE_PERCHING_ARM_GRIP_SERVO,
-                                 &PerchingArmNode::EnableGripperServoCallback,
-                                 this);
-
-        // Calibrate the arm
-        srv_c_ =
-            nh->advertiseService(SERVICE_HARDWARE_PERCHING_ARM_CALIBRATE,
-                                 &PerchingArmNode::CalibrateGripperCallback,
-                                this);
-
         // Exit once found
         return;
       }
@@ -188,7 +172,8 @@ class PerchingArmNode : public ff_util::FreeFlyerNodelet {
     GRIPPER_L_PROX,
     GRIPPER_L_DIST,
     GRIPPER_R_PROX,
-    GRIPPER_R_DIST
+    GRIPPER_R_DIST,
+    IDX
   };
 
   // Convert a value from the ROS convention to the firmware convention
@@ -201,6 +186,8 @@ class PerchingArmNode : public ff_util::FreeFlyerNodelet {
         return static_cast<int16_t>(value * 9.5492);  // rads/sec -> rpm
       case PERCENTAGE:
         return static_cast<int16_t>(value);
+      case IDX:
+        return static_cast<int32_t>(value);
       default:
         NODELET_WARN("Conversion to unknown data type");
         break;
@@ -267,11 +254,6 @@ class PerchingArmNode : public ff_util::FreeFlyerNodelet {
     // - power is in watts
 
     double perc = -100.0;
-    if (raw.grip.maximum == -8000) {
-      perc = static_cast<double>(raw.grip.position) /
-             static_cast<double>(raw.grip.maximum) * 100.0;
-      perc = 100 - perc;
-    }
 
     // Allocate the joint state message
     msg_.name.resize(7);
@@ -296,7 +278,7 @@ class PerchingArmNode : public ff_util::FreeFlyerNodelet {
     msg_.name[2] = prefix_ + "gripper_joint";
     msg_.position[2] = perc;
     msg_.velocity[2] = 0;
-    msg_.effort[2] = CnvFrom(POWER, raw.grip.load);
+    msg_.effort[2] = 0;
     // Add some digit joints, which are driven directly from the gripper
     // joint status. We do this so that the RVIZ renders the full gripper
     // to the user, even though we don't actually know the digit joints.
@@ -316,6 +298,21 @@ class PerchingArmNode : public ff_util::FreeFlyerNodelet {
     msg_.position[6] = CnvFrom(GRIPPER_R_DIST, perc);
     msg_.velocity[6] = 0;
     msg_.effort[6] = 0;
+
+    // TODO(acauligi): check math with Arul
+    // Stuff gecko perching gripper into joint state values
+    double* SD_data;
+    size_t gpg_n_bytes = 6;     // TODO(acauligi): convert from hard coded value?
+    SD_data = new double[gpg_n_bytes];
+    arm_.ConstructDataPacket(SD_data, gpg_n_bytes);
+
+    for (size_t ii = 0; ii < gpg_n_bytes; ii++) {
+      msg_.name[7+ii] = prefix_ + "gpg_data_" + std::to_string(ii);
+      msg_.position[7+ii] = *(SD_data+ii);
+      msg_.velocity[7+ii] = 0;
+      msg_.effort[7+ii] = 0;
+    }
+
     // Publish the message
     pub_.publish(msg_);
   }
@@ -324,10 +321,7 @@ class PerchingArmNode : public ff_util::FreeFlyerNodelet {
   void GoalCallback(sensor_msgs::JointState const &msg) {
     for (size_t i = 0; i < msg.name.size(); i++) {
       if (msg.name[i] == prefix_ + "gripper_joint") {
-        if (msg.position.size() > i)
-          arm_.SetGripperPosition(CnvTo(PERCENTAGE, msg.position[i]));
-        else
-          NODELET_WARN("Gripper: only position control is supported");
+        NODELET_WARN("Gripper: no control for Astrobee gripper supported");
         // Handle the proximal joint
       } else if (msg.name[i] == prefix_ + "arm_proximal_joint") {
         if (msg.position.size() > i)
@@ -341,6 +335,51 @@ class PerchingArmNode : public ff_util::FreeFlyerNodelet {
         else
           NODELET_WARN("Distal: only position control is supported");
         // Catch all invalid joint states
+      // TODO(acauligi): does CommandGeckoGripper() need to be created?
+      } else if (msg.name[i] == prefix_ + "gecko_gripper_open") {
+        arm_.OpenGripper();
+      } else if (msg.name[i] == prefix_ + "gecko_gripper_close") {
+        arm_.CloseGripper();
+      } else if (msg.name[i] == prefix_ + "gecko_gripper_engage") {
+        arm_.EngageGripper();
+      } else if (msg.name[i] == prefix_ + "gecko_gripper_disengage") {
+        arm_.DisengageGripper();
+      } else if (msg.name[i] == prefix_ + "gecko_gripper_lock") {
+        arm_.LockGripper();
+      } else if (msg.name[i] == prefix_ + "gecko_gripper_unlock") {
+        arm_.UnlockGripper();
+      } else if (msg.name[i] == prefix_ + "gecko_gripper_enable_auto") {
+        arm_.EnableAutoGripper();
+      } else if (msg.name[i] == prefix_ + "gecko_gripper_disable_auto") {
+        arm_.DisableAutoGripper();
+      } else if (msg.name[i] == prefix_ + "gecko_gripper_toggle_auto") {
+        arm_.ToggleAutoGripper();
+      } else if (msg.name[i] == prefix_ + "gecko_gripper_mark_gripper") {
+        int16_t IDX = static_cast<int16_t>(msg.position[0]);
+        arm_.MarkGripper(IDX);
+      } else if (msg.name[i] == prefix_ + "gecko_gripper_set_delay") {
+        int16_t DL = static_cast<int16_t>(msg.position[0]);
+        arm_.SetDelayGripper(DL);
+      } else if (msg.name[i] == prefix_ + "gecko_gripper_open_exp") {
+        int16_t IDX = static_cast<int16_t>(msg.position[0]);
+        arm_.OpenExperimentGripper(IDX);
+      } else if (msg.name[i] == prefix_ + "gecko_gripper_next_record") {
+        int16_t SKIP = static_cast<int16_t>(msg.position[0]);
+        arm_.NextRecordGripper(SKIP);
+      } else if (msg.name[i] == prefix_ + "gecko_gripper_seek_record") {
+        int16_t RN = static_cast<int16_t>(msg.position[0]);
+        arm_.SeekRecordGripper(RN);
+      } else if (msg.name[i] == prefix_ + "gecko_gripper_close_exp") {
+        arm_.CloseExperimentGripper();
+      } else if (msg.name[i] == prefix_ + "gecko_gripper_status") {
+        arm_.Status();
+      } else if (msg.name[i] == prefix_ + "gecko_gripper_record") {
+        arm_.Record();
+      } else if (msg.name[i] == prefix_ + "gecko_gripper_exp") {
+        arm_.ExperimentIdx();
+      } else if (msg.name[i] == prefix_ + "gecko_gripper_delay") {
+        arm_.PresentDelay();
+      } else if (msg.name[i] == prefix_ + "arm_distal_joint") {
       } else {
         NODELET_WARN_STREAM("Invalid joint: " << msg.name[i]);
       }
@@ -391,29 +430,6 @@ class PerchingArmNode : public ff_util::FreeFlyerNodelet {
     return true;
   }
 
-  // Enable/Disable the gripper joint servo
-  bool EnableGripperServoCallback(ff_hw_msgs::SetEnabled::Request &req,
-                                  ff_hw_msgs::SetEnabled::Response &res) {
-    // ROS_WARN("[Perching_arm] Enable/Disable the gripper joint servo callback");
-    PerchingArmResult r;
-
-    if (req.enabled)
-      r = arm_.EnableGripper();
-    else
-      r = arm_.DisableGripper();
-    res.success = arm_.ResultToString(r, res.status_message);
-    return true;
-  }
-
-  // Calibrate the gripper
-  bool CalibrateGripperCallback(ff_hw_msgs::CalibrateGripper::Request &req,
-                                ff_hw_msgs::CalibrateGripper::Response &res) {
-    // ROS_WARN("[Perching_arm] Calibrate Gripper Callback");
-    PerchingArmResult r = arm_.CalibrateGripper();
-    res.success = arm_.ResultToString(r, res.status_message);
-    return true;
-  }
-
  private:
   PerchingArm arm_;              // Arm interface library
   ros::Subscriber sub_;          // Joint state subscriber
@@ -422,8 +438,7 @@ class PerchingArmNode : public ff_util::FreeFlyerNodelet {
   ros::ServiceServer srv_t_;     // Set max tilt velcoity
   ros::ServiceServer srv_ps_;    // Enable/Disable the proximal joint servo
   ros::ServiceServer srv_ds_;    // Enable/Disable the distal   joint servo
-  ros::ServiceServer srv_gs_;    // Enable/Disable the gripper  joint servo
-  ros::ServiceServer srv_c_;     // Calibrate gripper
+
   std::string prefix_;           // Joint prefix
   sensor_msgs::JointState msg_;  // Internal joint state
 };

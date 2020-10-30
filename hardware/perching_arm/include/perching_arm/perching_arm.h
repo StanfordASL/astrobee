@@ -21,7 +21,6 @@
 
 #include <ff_serial/serial.h>
 
-#include <iostream>
 #include <functional>
 #include <string>
 
@@ -79,6 +78,25 @@ enum PerchingArmResult {
   RESULT_OUT_OF_BOUNDS        // Cannot reach the specified angle
 };
 
+enum {
+  ERR_RESULT           = 0x01,
+  ERR_INSTR            = 0x02,
+  ERR_CRC              = 0x03,
+  ERR_DATA_RANGE       = 0x04,
+  ERR_DATA_LEN         = 0x05,
+  ERR_DATA_LIM         = 0x06,
+  ERR_ACCESS           = 0x07,
+
+  ERR_INSTR_READ       = 0x08,
+  ERR_INSTR_WRITE      = 0x09,
+  ERR_TOF_INIT         = 0x0A,
+  ERR_TOF_READ         = 0x0B,
+  ERR_SD_INIT          = 0x0C,
+  ERR_SD_OPEN          = 0x0D,
+  ERR_SD_WRITE         = 0x0E,
+  ERR_SD_READ          = 0x0F,
+};
+
 // Raw data struct, which contains more info than required
 struct PerchingArmRaw {
   // Individual joint state
@@ -92,7 +110,22 @@ struct PerchingArmRaw {
     int16_t load;      // unit: 6.138mA
     int16_t position;  // unit: ticks (open = 0, closed = -8000)
     int16_t maximum;   // unit: fixed at -8000
+
+    // TODO(acauligi): Anyway to retain backwards compatibility here?
+    uint16_t last_status_read_time;
+    uint16_t error_status;
+    int16_t adhesive_engage;
+    int16_t wrist_lock;
+    int16_t automatic_mode_enable;
+    int16_t experiment_in_progress;
+    int16_t overtemperature_flag;
+    int16_t file_is_open;
+    uint16_t exp_idx;
+    uint16_t delay_ms;
+    char line[35];
+    bool read_SD;
   };
+
   PerchingArmRawJoint prox;
   PerchingArmRawJoint dist;
   PerchingArmRawGripper grip;
@@ -167,12 +200,6 @@ class PerchingArm {
   // Print a human-readable string from a result, and return success
   bool ResultToString(PerchingArmResult result, std::string& msg);
 
-  // Calibrate the gripper (it will end up closed after completion)
-  PerchingArmResult CalibrateGripper();
-
-  // Set the gripper position (in percentage from 0 to 100)
-  PerchingArmResult SetGripperPosition(int16_t perc);
-
   // Enable or disabled the proximal motor
   PerchingArmResult SetProximalEnabled();
   PerchingArmResult SetProximalDisabled();
@@ -193,16 +220,6 @@ class PerchingArm {
   // Set the position of the distal joint in rads
   PerchingArmResult SetDistalPosition(int16_t degrees);
 
-  // Enable the gripper
-  PerchingArmResult EnableGripper();
-  PerchingArmResult DisableGripper();
-
-  // Open the gripper
-  PerchingArmResult OpenGripper();
-
-  // Close the gripper
-  PerchingArmResult CloseGripper();
-
   // Reset the software
   PerchingArmResult SoftReset();
 
@@ -211,6 +228,33 @@ class PerchingArm {
 
   // Configure the arm
   PerchingArmResult SendCommand(uint8_t target, int16_t address, int16_t value);
+
+  PerchingArmResult OpenGripper();
+  PerchingArmResult CloseGripper();
+
+  PerchingArmResult EngageGripper();
+  PerchingArmResult DisengageGripper();
+
+  PerchingArmResult LockGripper();
+  PerchingArmResult UnlockGripper();
+
+  PerchingArmResult EnableAutoGripper();
+  PerchingArmResult DisableAutoGripper();
+  PerchingArmResult ToggleAutoGripper();
+
+  PerchingArmResult MarkGripper(int16_t IDX);
+  PerchingArmResult SetDelayGripper(int16_t DL);
+  PerchingArmResult OpenExperimentGripper(int16_t IDX);
+  PerchingArmResult NextRecordGripper(int16_t SKIP);
+  PerchingArmResult SeekRecordGripper(int16_t RN);
+  PerchingArmResult CloseExperimentGripper();
+
+  PerchingArmResult Status();
+  PerchingArmResult Record();
+  PerchingArmResult ExperimentIdx();
+  PerchingArmResult PresentDelay();
+
+  void ConstructDataPacket(double* data, size_t len);
 
   void ProcessPacket(const uint8_t* buffer, size_t length, double curr_time);
 
@@ -234,13 +278,28 @@ class PerchingArm {
   static constexpr int16_t ADDRESS_DISABLE = 4;
   static constexpr int16_t ADDRESS_RESET = 10;
   static constexpr int16_t ADDRESS_TORQUE_LIMIT = 34;
-  static constexpr int16_t ADDRESS_GRIPPER_CALIBRATE = 51;
-  static constexpr int16_t ADDRESS_GRIPPER_OPEN = 52;
-  static constexpr int16_t ADDRESS_GRIPPER_CLOSE = 53;
-  static constexpr int16_t ADDRESS_GRIPPER_SET = 54;
-  static constexpr int16_t ADDRESS_GRIPPER_RESET = 55;
-  static constexpr int16_t ADDRESS_GRIPPER_ENABLE = 101;
-  static constexpr int16_t ADDRESS_GRIPPER_DISABLE = 100;
+
+  static constexpr int16_t ADDRESS_GRIPPER_TOGGLE_AUTO        = 0x33;
+  static constexpr int16_t ADDRESS_GRIPPER_OPEN               = 0x34;
+  static constexpr int16_t ADDRESS_GRIPPER_CLOSE              = 0x35;
+  static constexpr int16_t ADDRESS_GRIPPER_MARK               = 0x36;
+  static constexpr int16_t ADDRESS_GRIPPER_ENGAGE             = 0x40;
+  static constexpr int16_t ADDRESS_GRIPPER_DISENGAGE          = 0x41;
+  static constexpr int16_t ADDRESS_GRIPPER_LOCK               = 0x50;
+  static constexpr int16_t ADDRESS_GRIPPER_UNLOCK             = 0x51;
+  static constexpr int16_t ADDRESS_GRIPPER_ENABLE_AUTO        = 0x60;
+  static constexpr int16_t ADDRESS_GRIPPER_DISABLE_AUTO       = 0x61;
+
+  static constexpr int16_t ADDRESS_GRIPPER_SET_DELAY          = 0x62;
+  static constexpr int16_t ADDRESS_GRIPPER_OPEN_EXPERIMENT    = 0x70;
+  static constexpr int16_t ADDRESS_GRIPPER_NEXT_RECORD        = 0x71;
+  static constexpr int16_t ADDRESS_GRIPPER_SEEK_RECORD        = 0x72;
+  static constexpr int16_t ADDRESS_GRIPPER_CLOSE_EXPERIMENT   = 0x73;
+
+  static constexpr int16_t GECKO_REG_PRESENT_STATUS           = 0x30;
+  static constexpr int16_t GECKO_REG_PRESENT_RECORD           = 0x7A;
+  static constexpr int16_t GECKO_REG_PRESENT_EXPERIMENT       = 0x7B;
+  static constexpr int16_t GECKO_REG_PRESENT_DELAY            = 0x7C;
 
   // Protocol value constants
   static constexpr int16_t VALUE_POWER_DISABLE = 0;
@@ -319,6 +378,8 @@ class PerchingArm {
     HOST_ARM_TELEMETRY_DC_GRIPPER_STATE = 1,
     HOST_ARM_TELEMETRY_SERVO_JOINT_STATE = 2,
     HOST_ARM_TELEMETRY_SERVO_JOINT_STATUS = 3,
+    HOST_ARM_TELEMETRY_GECKO_GRIPPER_STATE = 4,
+    HOST_ARM_TELEMETRY_SD_CARD_STATE = 5,
 
     HOST_ARM_TELEMETRY_ACK = 62,
     HOST_ARM_TELEMETRY_PONG = 63,
@@ -342,6 +403,7 @@ class PerchingArm {
 
     HOST_ARM_BASIC_CMD_RAW_MOTOR = 7,
     HOST_ARM_BASIC_CMD_DC_GRIPPER = 8,
+    HOST_ARM_BASIC_CMD_GECKO_GRIPPER = 9,
 
     HOST_ARM_BASIC_CMD_POWER = 10,
 
@@ -383,6 +445,27 @@ class PerchingArm {
 
     uint8_t motor_flags;  // bitfield of OR'd HOST_ARM_DC_GRIPPER_FLAG_*
   } __attribute__((packed)) host_arm_dc_gripper_state_telemetry_t;
+
+  typedef struct {
+    host_arm_telemetry_prefix_t prefix;
+
+    uint16_t last_status_read_time;
+    uint16_t error_status;
+    bool adhesive_engage;
+    bool wrist_lock;
+    bool automatic_mode_enable;
+    bool experiment_in_progress;
+    bool overtemperature_flag;
+    bool file_is_open;
+    uint16_t exp_idx;
+    uint16_t delay_ms;
+  } __attribute__((packed)) host_gecko_gripper_state_telemetry_t;
+
+  typedef struct {
+    host_arm_telemetry_prefix_t prefix;
+
+    char line[35];
+  } __attribute__((packed)) host_sd_card_state_telemetry_t;
 
   enum {
     // joint operating normally
@@ -519,8 +602,11 @@ class PerchingArm {
     char msg[HOST_ARM_TELEMETRY_MAX_LOG_MSG_LEN];  // including terminating '\0'
   } __attribute__((packed)) host_arm_error_msg_telemetry_t;
 
-  void ProcessGripperStateTelemetry(
-      const host_arm_dc_gripper_state_telemetry_t* packet);
+  void ProcessGeckoGripperStateTelemetry(
+      const host_gecko_gripper_state_telemetry_t *packet);
+
+  void ProcessSDCardStateTelemetry(
+      const host_sd_card_state_telemetry_t *packet);
 
   void ProcessServoJointStateTelemetry(
       const host_arm_servo_joint_state_telemetry_t* packet);

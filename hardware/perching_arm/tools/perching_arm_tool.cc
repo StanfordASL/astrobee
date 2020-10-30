@@ -53,7 +53,6 @@ namespace perching_arm {
 enum ToolState {
   WAITING_ON_PROX_POS,
   WAITING_ON_DIST_POS,
-  WAITING_ON_GRIP_POS,
   WAITING_ON_COMMAND
 };
 
@@ -238,12 +237,6 @@ void DataCallback(PerchingArmRaw const &raw) {
       tolv = FLAGS_deg;
       if (FLAGS_debug) std::cout << "[dist] ";
       break;
-    case WAITING_ON_GRIP_POS:
-      curr = static_cast<double>(raw.grip.position) * 100.0 /
-             static_cast<double>(raw.grip.maximum);
-      tolv = FLAGS_perc;
-      if (FLAGS_debug) std::cout << "[grip] ";
-      break;
     case WAITING_ON_COMMAND:
     default:
       return;
@@ -283,6 +276,7 @@ void PrintResult(PerchingArm &arm, PerchingArmResult ret) {
 // Print a nice menu
 void PrintMenu() {
   std::cout << "************ VERSION 07/08/2019 *************" << std::endl;
+  std::cout << "********** GECKO PERCHING GRIPPER ***********" << std::endl;
   std::cout << "******************** MENU *******************" << std::endl;
   std::cout << "*********************************************" << std::endl;
   std::cout << "[x] Exit                                    *" << std::endl;
@@ -304,14 +298,27 @@ void PrintMenu() {
   std::cout << "[Y] Disable pan motor                       *" << std::endl;
   std::cout << "[X] Enable pan motor                        *" << std::endl;
   std::cout << "*********************************************" << std::endl;
-  std::cout << "[G] Enable gripper                          *" << std::endl;
-  std::cout << "[g] Set gripper position                    *" << std::endl;
-  std::cout << "[o] Open gripper                            *" << std::endl;
-  std::cout << "[c] Close gripper                           *" << std::endl;
-  std::cout << "[k] Calibrate gripper                       *" << std::endl;
+  std::cout << "[O] Open gripper                            *" << std::endl;
+  std::cout << "[C] Close gripper                           *" << std::endl;
+  std::cout << "[G] Engage gripper                          *" << std::endl;
+  std::cout << "[N] Disengage gripper                       *" << std::endl;
+  std::cout << "[L] Lock gripper                            *" << std::endl;
+  std::cout << "[U] Unlock gripper                          *" << std::endl;
+  std::cout << "[E] Enable auto gripper                     *" << std::endl;
+  std::cout << "[D] Disable auto gripper                    *" << std::endl;
+  std::cout << "[T] Toggle auto gripper                     *" << std::endl;
+  std::cout << "[M] Mark gripper idx                        *" << std::endl;
+  std::cout << "[S] Set delay gripper                       *" << std::endl;
+  std::cout << "[F] Open experiment gripper                 *" << std::endl;
+  std::cout << "[R] Next record gripper                     *" << std::endl;
+  std::cout << "[K] Seek record gripper                     *" << std::endl;
+  std::cout << "[c] Close experiment gripper                *" << std::endl;
   std::cout << "*********************************************" << std::endl;
-  std::cout << "[e] Run EMI test                            *" << std::endl;
-  std::cout << "[T] Run gripper test                        *" << std::endl;
+  std::cout << "[a] Read gripper status                     *" << std::endl;
+  std::cout << "[l] Read SD record                          *" << std::endl;
+  std::cout << "[o] Check experiment idx                    *" << std::endl;
+  std::cout << "[n] Read TOF delay                          *" << std::endl;
+  std::cout << "[e] Check error byte                        *" << std::endl;
   std::cout << "*********************************************" << std::endl;
   std::cout << "[h] Hard reset of controller Board (FTDI)   *" << std::endl;
   std::cout << "[s] Soft reset of controller Board (SW)     *" << std::endl;
@@ -379,19 +386,20 @@ bool GetCommand(PerchingArm &arm) {
                 << Scale(PerchingArm::K_LOAD_JOINT_MA, raw_.dist.load)
                 << " mA (raw: " << raw_.dist.load << ")" << std::endl;
       std::cout << "GRIPPER" << std::endl;
-      if (raw_.grip.maximum == -8000) {
-        std::cout << "- Maximum: " << raw_.grip.maximum << std::endl;
-        std::cout << "- Position: "
-                  << (static_cast<double>(raw_.grip.position) /
-                      static_cast<double>(raw_.grip.maximum) * 100.0)
-                  << std::endl
-                  << " % (raw: " << raw_.grip.position << ")" << std::endl;
-      } else {
-        std::cout << "- UNCALIBRATED " << std::endl;
-      }
-      std::cout << "- Load: "
-                << Scale(PerchingArm::K_LOAD_GRIPPER_MA, raw_.grip.load)
-                << " mA (raw: " << raw_.grip.load << ")" << std::endl;
+      std::cout << "- Adhesives: "
+                << (raw_.grip.adhesive_engage ? "engaged" : "disengaged")
+                << std::endl;
+      std::cout << "- Wrist: "
+                << (raw_.grip.wrist_lock ? "locked" : "unlocked")
+                << std::endl;
+      std::cout << "- Automatic mode: "
+                << (raw_.grip.automatic_mode_enable ? "enabled" : "disabled")
+                << std::endl;
+      std::cout << "- File: "
+                << (raw_.grip.file_is_open? "File is open" : "File is closed")
+                << std::endl;
+      std::cout << "- Exp idx: " << raw_.grip.exp_idx <<  std::endl;
+      std::cout << "- Delay: " << raw_.grip.delay_ms << " [ms] " << std::endl;
       std::cout << "BOARD" << std::endl;
       std::cout << "- 5V current: "
                 << Scale(PerchingArm::K_CURRENT_5V, raw_.current_5v)
@@ -460,11 +468,6 @@ bool GetCommand(PerchingArm &arm) {
       PrintResult(arm, ret);
       return true;
     }
-    // Enable the gripper
-    case 'G': {
-      arm.EnableGripper();
-      return true;
-    }
     // Enable the pan motor
     case 'X': {
       arm.SetProximalEnabled();
@@ -485,152 +488,196 @@ bool GetCommand(PerchingArm &arm) {
       arm.SetDistalDisabled();
       return true;
     }
-    // Set the gripper position
-    case 'g': {
-      std::cout << "Input the gripper position as a percentage:" << std::endl;
-      int16_t val;
-      if (!InputSignedShort(val, PerchingArm::GRIP_POS_MIN,
-                            PerchingArm::GRIP_POS_MAX))
-        return true;
-      ret = arm.SetGripperPosition(val);
-      PrintResult(arm, ret);
-      WaitForResultWithTimeout(WAITING_ON_GRIP_POS, val);
-      return true;
-    }
     // Open the gripper
-    case 'o': {
+    case 'O': {
       ret = arm.OpenGripper();
-      PrintResult(arm, ret);
-      WaitForResultWithTimeout(WAITING_ON_GRIP_POS, PerchingArm::GRIP_POS_MAX);
       return true;
     }
     // Close the gripper
-    case 'c': {
+    case 'C': {
       ret = arm.CloseGripper();
-      PrintResult(arm, ret);
-      WaitForResultWithTimeout(WAITING_ON_GRIP_POS, PerchingArm::GRIP_POS_MIN);
       return true;
     }
-    // Calibrate the gripper
-    case 'k': {
-      ret = arm.CalibrateGripper();
-      PrintResult(arm, ret);
-      WaitForResultWithTimeout(WAITING_ON_GRIP_POS, PerchingArm::GRIP_POS_MAX);
+    // Engage the gripper
+    case 'G': {
+      ret = arm.EngageGripper();
       return true;
     }
-    // Run the EMI test
-    case 'e': {
-      const unsigned int DEFAULT_DELAY_MS = 3000;
-      std::cout << "PAN(0)" << std::endl;
-      ret = arm.SetDistalPosition(0);
-      PrintResult(arm, ret);
-      WaitForResultWithTimeout(WAITING_ON_DIST_POS, 0);
-      std::this_thread::sleep_for(std::chrono::milliseconds(DEFAULT_DELAY_MS));
-      std::cout << "TILT(-90)" << std::endl;
-      ret = arm.SetProximalPosition(-90);
-      PrintResult(arm, ret);
-      WaitForResultWithTimeout(WAITING_ON_PROX_POS, -90);
-      std::this_thread::sleep_for(std::chrono::milliseconds(DEFAULT_DELAY_MS));
-      std::cout << "CALIBRATE()" << std::endl;
-      ret = arm.CalibrateGripper();
-      PrintResult(arm, ret);
-      WaitForResultWithTimeout(WAITING_ON_GRIP_POS, PerchingArm::GRIP_POS_MAX);
-      std::this_thread::sleep_for(
-          std::chrono::milliseconds(2 * DEFAULT_DELAY_MS));
-      while (true) {
-        std::cout << "CLOSE()" << std::endl;
-        ret = arm.CloseGripper();
-        PrintResult(arm, ret);
-        WaitForResultWithTimeout(WAITING_ON_GRIP_POS,
-                                 PerchingArm::GRIP_POS_MIN);
-        std::this_thread::sleep_for(
-            std::chrono::milliseconds(DEFAULT_DELAY_MS));
-        std::cout << "PAN(-45)" << std::endl;
-        ret = arm.SetDistalPosition(-45);
-        PrintResult(arm, ret);
-        WaitForResultWithTimeout(WAITING_ON_DIST_POS, -45);
-        std::this_thread::sleep_for(
-            std::chrono::milliseconds(DEFAULT_DELAY_MS));
-        std::cout << "PAN(45)" << std::endl;
-        ret = arm.SetDistalPosition(45);
-        PrintResult(arm, ret);
-        WaitForResultWithTimeout(WAITING_ON_DIST_POS, 45);
-        std::this_thread::sleep_for(
-            std::chrono::milliseconds(DEFAULT_DELAY_MS));
-        std::cout << "PAN(0)" << std::endl;
-        ret = arm.SetDistalPosition(0);
-        PrintResult(arm, ret);
-        WaitForResultWithTimeout(WAITING_ON_DIST_POS, 0);
-        std::this_thread::sleep_for(
-            std::chrono::milliseconds(DEFAULT_DELAY_MS));
-        std::cout << "OPEN()" << std::endl;
-        ret = arm.OpenGripper();
-        PrintResult(arm, ret);
-        WaitForResultWithTimeout(WAITING_ON_GRIP_POS,
-                                 PerchingArm::GRIP_POS_MAX);
-        std::this_thread::sleep_for(
-            std::chrono::milliseconds(DEFAULT_DELAY_MS));
-        std::cout << "TILT(0)" << std::endl;
-        ret = arm.SetProximalPosition(0);
-        PrintResult(arm, ret);
-        WaitForResultWithTimeout(WAITING_ON_PROX_POS, 0);
-        std::this_thread::sleep_for(
-            std::chrono::milliseconds(DEFAULT_DELAY_MS));
-        std::cout << "TILT(-90)" << std::endl;
-        ret = arm.SetProximalPosition(-90);
-        PrintResult(arm, ret);
-        WaitForResultWithTimeout(WAITING_ON_PROX_POS, -90);
-        std::this_thread::sleep_for(
-            std::chrono::milliseconds(DEFAULT_DELAY_MS));
-      }
+    // Disengage the gripper
+    case 'N': {
+      ret = arm.DisengageGripper();
       return true;
     }
+    // Lock the gripper
+    case 'L': {
+      arm.LockGripper();
+      return true;
+    }
+    // Unlock the gripper
+    case 'U': {
+      arm.UnlockGripper();
+      return true;
+    }
+    // Enable the gripper
+    case 'E': {
+      arm.EnableAutoGripper();
+      return true;
+    }
+    // Disable the gripper
+    case 'D': {
+      arm.DisableAutoGripper();
+      return true;
+    }
+    // Toggle auto gripper
     case 'T': {
-      const int OPEN_CLOSE_PER_CYCLE = 10;
-      const unsigned int DEFAULT_DELAY_MS = 3000;
-      uint16_t nb_cycles = 0;
-      std::cout << "> Number of full cycles (" << OPEN_CLOSE_PER_CYCLE
-                << " open/close per calibrate-[open-close] cycle): "
-                << std::endl;
-      if (!InputUnsignedShort(nb_cycles, 0, 100)) return true;
-      int close_count = 0;
-      int calibrate_count = 0;
-      for (int c = 0; c < nb_cycles; c++) {
-        std::cout << "Calibrate Gripper" << std::endl;
-        ret = arm.CalibrateGripper();
-        calibrate_count++;
-        PrintResult(arm, ret);
-        WaitForResultWithTimeout(WAITING_ON_GRIP_POS,
-                                 PerchingArm::GRIP_POS_MAX);
-        std::this_thread::sleep_for(
-            std::chrono::milliseconds(2 * DEFAULT_DELAY_MS));
-        std::cout << "Close Gripper" << std::endl;
-        ret = arm.CloseGripper();
-        PrintResult(arm, ret);
-        WaitForResultWithTimeout(WAITING_ON_GRIP_POS,
-                                 PerchingArm::GRIP_POS_MIN);
-        std::this_thread::sleep_for(
-            std::chrono::milliseconds(DEFAULT_DELAY_MS));
-        std::cout << "Executing " << OPEN_CLOSE_PER_CYCLE
-                  << " close/open cycles..." << std::endl;
-        for (int n = 0; n < OPEN_CLOSE_PER_CYCLE; n++) {
-          ret = arm.OpenGripper();
-          PrintResult(arm, ret);
-          WaitForResultWithTimeout(WAITING_ON_GRIP_POS,
-                                   PerchingArm::GRIP_POS_MAX);
-          std::this_thread::sleep_for(
-              std::chrono::milliseconds(DEFAULT_DELAY_MS));
-          ret = arm.CloseGripper();
-          PrintResult(arm, ret);
-          WaitForResultWithTimeout(WAITING_ON_GRIP_POS,
-                                   PerchingArm::GRIP_POS_MIN);
-          std::this_thread::sleep_for(
-              std::chrono::milliseconds(DEFAULT_DELAY_MS));
-          close_count++;
-        }
-        std::cout << "#calibrate = " << calibrate_count
-                  << " / #open-close = " << close_count << std::endl;
+      arm.ToggleAutoGripper();
+      return true;
+    }
+    // Mark gripper
+    case 'M': {
+      uint16_t min = 0;
+      uint16_t max = 65535;
+      uint16_t IDX;
+      if (!InputUnsignedShort(IDX, min, max)) {
+        std::cout << "Invalid IDX value for MarkGripper()!" << std::endl;
+        return false;
       }
+      arm.MarkGripper(IDX);
+      return true;
+    }
+    // Set delay for gripper
+    case 'S': {
+      int16_t min = 0;
+      int16_t max = 32767;
+      int16_t DL;
+      if (!InputSignedShort(DL, min, max)) {
+        std::cout << "Invalid DL value for SetDelayGripper(DL)!" << std::endl;
+        return false;
+      } else {
+        std::cout << "Delay is " << DL << " milliseconds!" << std::endl;
+      }
+      arm.SetDelayGripper(DL);
+      return true;
+    }
+    // Open experiment
+    case 'F': {
+      uint16_t min = 0;
+      uint16_t max = 65535;
+      uint16_t IDX;
+      if (!InputUnsignedShort(IDX, min, max)) {
+        std::cout << "Invalid IDX value for OpenExperimentGripper(IDX)!" << std::endl;
+        return false;
+      } else {
+        std::cout << "IDX is " << IDX << "!" << std::endl;
+      }
+      arm.OpenExperimentGripper(static_cast<int16_t>(IDX));
+      return true;
+    }
+    // Next record
+    case 'R': {
+      int16_t min = 0;
+      int16_t max = 32767;
+      int16_t SKIP;
+      if (!InputSignedShort(SKIP, min, max)) {
+        std::cout << "Invalid SKIP value for NextRecordGripper(SKIP)!" << std::endl;
+        return false;
+      } else {
+        std::cout << "SKIP is " << SKIP << "!" << std::endl;
+      }
+      arm.NextRecordGripper(SKIP);
+      return true;
+    }
+    // Seek record
+    case 'K': {
+      int16_t min = 0;
+      int16_t max = 32767;
+      int16_t RN;
+      if (!InputSignedShort(RN, min, max)) {
+        std::cout << "Invalid RN value for SeekRecordGripper(RN)!" << std::endl;
+        return false;
+      } else {
+        std::cout << "RN is " << RN << "!" << std::endl;
+      }
+      arm.SeekRecordGripper(RN);
+      return true;
+    }
+    // Close experiment
+    case 'c': {
+      arm.CloseExperimentGripper();
+      return true;
+    }
+    // Read gripper status
+    case 'a': {
+      arm.Status();
+      return true;
+    }
+    // Read SD record
+    case 'l': {
+      arm.Record();
+      return true;
+    }
+    // Read TOF delay
+    case 'n': {
+      arm.PresentDelay();
+      return true;
+    }
+    // Check experiment idx
+    case 'o': {
+      arm.ExperimentIdx();
+      return true;
+    }
+    // Check error byte
+    case 'e': {
+      if (!raw_.grip.error_status) {
+        std::cout << "No error currently!" << std::endl;
+      }
+
+      uint8_t err;
+      if (raw_.grip.error_status && 0x80) {
+        // Check if first bit is 1
+        err = raw_.grip.error_status & 0x7F;
+      } else {
+        // If first bit = 0, ignore trailing bits
+        err = 0x00;
+      }
+      err = raw_.grip.error_status & 0x7F;
+
+      switch (err) {
+        case perching_arm::ERR_RESULT:
+          std::cout << "Result Fail" << std::endl;
+        case perching_arm::ERR_INSTR:
+          std::cout << "Instruction Fail" << std::endl;
+        case perching_arm::ERR_CRC:
+          std::cout << "CRC Error" << std::endl;
+        case perching_arm::ERR_DATA_RANGE:
+          std::cout << "Data Range Error" << std::endl;
+        case perching_arm::ERR_DATA_LEN:
+          std::cout << "Data Length Error" << std::endl;
+        case perching_arm::ERR_DATA_LIM:
+        std::cout << "Data Limit Error" << std::endl;
+        case perching_arm::ERR_ACCESS:
+          std::cout << "Access Error" << std::endl;
+        case perching_arm::ERR_INSTR_READ:
+          std::cout << "Instruction Read Error" << std::endl;
+        case perching_arm::ERR_INSTR_WRITE:
+          std::cout << "Instruction Write Error" << std::endl;
+        case perching_arm::ERR_TOF_INIT:
+          std::cout << "TOF Init Error" << std::endl;
+        case perching_arm::ERR_TOF_READ:
+          std::cout << "TOF Read Error" << std::endl;
+        case perching_arm::ERR_SD_INIT:
+          std::cout << "SD Init Error" << std::endl;
+        case perching_arm::ERR_SD_OPEN:
+          std::cout << "SD Open Error" << std::endl;
+        case perching_arm::ERR_SD_WRITE:
+          std::cout << "SD Write Error" << std::endl;
+        case perching_arm::ERR_SD_READ:
+          std::cout << "SD Read Error" << std::endl;
+        default:
+          std::cout << "Default error flag!" << std::endl;
+          break;
+      }
+      return true;
     }
     // Perform a hard reset
     case 'h': {
