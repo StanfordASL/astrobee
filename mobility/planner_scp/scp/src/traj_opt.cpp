@@ -29,7 +29,7 @@ TOP::TOP(decimal_t Tf_, int N_)
   free_final_state = false;
   state_dim = 13;
   control_dim = 6;
-  state_bd_dim = 7;
+  state_bd_dim = 7;   // State LB and UB only enforced for pos. and orientation
   dh = Tf / N;
 
   solver = NULL;
@@ -107,7 +107,7 @@ size_t TOP::GetNumTOPVariables() {
 
 size_t TOP::GetNumTOPConstraints() {
   size_t boundary_cons = 2*state_dim;
-  size_t control_cons = control_dim*(N-1);
+  size_t control_cons = control_dim*(N-1);    // TODO(acauligi): what are these?
   size_t control_slack_cons = 2*10*(N-1);
   size_t state_UB_slack_cons = 2*7*(N-1);
   size_t state_LB_slack_cons = 2*7*(N-1);
@@ -411,10 +411,13 @@ void TOP::SetBoundaryCons() {
 
 void TOP::SetControlCons() {
   size_t row_idx = 2*state_dim;
+
+  // col_idx tracks the slack variable under consideration
   size_t col_idx = state_dim*N + control_dim*(N-1);
 
   for (size_t ii = 0; ii < N-1; ii++) {
     // Linear acceleration
+    // -sik-aik <= 0
     upper_bound.segment(row_idx, 3).setZero();
     for (size_t jj = 0; jj < 3; jj++) {
       linear_con_mat.insert(row_idx+jj, state_dim*N + control_dim*ii + jj) = -1;
@@ -423,6 +426,7 @@ void TOP::SetControlCons() {
 
     row_idx += 3;
 
+    // aik-sik <= 0
     upper_bound.segment(row_idx, 3).setZero();
     for (size_t jj = 0; jj < 3; jj++) {
       linear_con_mat.insert(row_idx+jj, state_dim*N + control_dim*ii + jj) = 1;
@@ -431,6 +435,7 @@ void TOP::SetControlCons() {
 
     row_idx += 3;
 
+    // sum(sik) <= a_max
     upper_bound(row_idx) = mass*desired_accel_;
     for (size_t jj = 0; jj < 3; jj++) {
       linear_con_mat.insert(row_idx, col_idx+jj) = 1;
@@ -440,6 +445,7 @@ void TOP::SetControlCons() {
     col_idx += 3;
 
     // Angular acceleration
+    // -sik-alpha_ik <= 0
     upper_bound.segment(row_idx, 3).setZero();
     for (size_t jj = 0; jj < 3; jj++) {
       linear_con_mat.insert(row_idx+jj, state_dim*N + control_dim*ii + 3 + jj) = -1;
@@ -448,6 +454,7 @@ void TOP::SetControlCons() {
 
     row_idx += 3;
 
+    // alpha_ik - sik <= 0
     upper_bound.segment(row_idx, 3).setZero();
     for (size_t jj = 0; jj < 3; jj++) {
       linear_con_mat.insert(row_idx+jj, state_dim*N + control_dim*ii + 3 + jj) = 1;
@@ -456,6 +463,7 @@ void TOP::SetControlCons() {
 
     row_idx += 3;
 
+    // sum(sik) <= alpha_max
     Vec3 alpha_;
     alpha_.setOnes();
     alpha_ *= desired_alpha_;
@@ -480,10 +488,13 @@ void TOP::SetControlCons() {
 void TOP::SetStateCons() {
   // State LB
   size_t row_idx = 2*state_dim + 20*(N-1);
+
+  // col_idx tracks the slack variable under consideration
   size_t col_idx = state_dim*N + 2*control_dim*(N-1);
   for (size_t ii = 0; ii < N-1; ii++) {
-    // Position limits
+    // State LB
     for (size_t jj = 0; jj < 3; jj++) {
+      // Position limits: -xik-zik <= -x_min_i
       upper_bound(row_idx+jj) = -x_min(jj);
 
       linear_con_mat.insert(row_idx+jj, state_dim*(ii+1)+jj) = -1;
@@ -493,8 +504,8 @@ void TOP::SetStateCons() {
     row_idx += 3;
     col_idx += 3;
 
-    // Quaternion limits
     for (size_t jj = 0; jj < 4; jj++) {
+      // Quaternion limits: -xik-zik <= -x_min_i
       upper_bound(row_idx+jj) = -x_min(6+jj);
 
       linear_con_mat.insert(row_idx+jj, state_dim*(ii+1)+6+jj) = -1;
@@ -508,6 +519,7 @@ void TOP::SetStateCons() {
   // State UB
   for (size_t ii = 0; ii < N-1; ii++) {
     for (size_t jj = 0; jj < 3; jj++) {
+      // Position limits: xik-zik <= x_max_i
       upper_bound(row_idx+jj) = x_max(jj);
 
       linear_con_mat.insert(row_idx+jj, state_dim*(ii+1)+jj) = 1;
@@ -518,6 +530,7 @@ void TOP::SetStateCons() {
     col_idx += 3;
 
     for (size_t jj = 0; jj < 4; jj++) {
+      // Quaternion limits: xik-zik <= x_max_i
       upper_bound(row_idx+jj) = x_max(6+jj);
 
       linear_con_mat.insert(row_idx+jj, state_dim*(ii+1)+6+jj) = 1;
@@ -537,14 +550,15 @@ void TOP::SetStateCons() {
 }
 
 void TOP::SetVelCons() {
-  size_t state_bd_dim = 7;
   size_t row_idx = 2*state_dim + 20*(N-1) + 4*state_bd_dim*(N-1);
+
+  // col_idx tracks the slack variable under consideration
   size_t col_idx = state_dim*N + 2*control_dim*(N-1) + 2*state_bd_dim*(N-1);
 
   // Linear velocity constraints
   for (size_t ii = 0; ii < N-1; ii++) {
-    upper_bound.segment(row_idx, 3).setZero();
     // -sk-vk <= 0.
+    upper_bound.segment(row_idx, 3).setZero();
     for (size_t jj = 0; jj < 3; jj++) {
       linear_con_mat.insert(row_idx+jj, state_dim*(ii+1)+3+jj) = -1;
       linear_con_mat.insert(row_idx+jj, col_idx+jj) = -1;
@@ -552,8 +566,8 @@ void TOP::SetVelCons() {
 
     row_idx += 3;
 
-    upper_bound.segment(row_idx, 3).setZero();
     // vk-sk <= 0.
+    upper_bound.segment(row_idx, 3).setZero();
     for (size_t jj = 0; jj < 3; jj++) {
       linear_con_mat.insert(row_idx+jj, state_dim*(ii+1)+3+jj) = 1;
       linear_con_mat.insert(row_idx+jj, col_idx+jj) = -1;
@@ -561,6 +575,7 @@ void TOP::SetVelCons() {
 
     row_idx += 3;
 
+    // sum(sik) - zk <= v_max
     upper_bound(row_idx) = desired_vel_;
     for (size_t jj = 0; jj <3; jj++) {
       linear_con_mat.insert(row_idx, col_idx+jj) = 1;
@@ -580,13 +595,14 @@ void TOP::SetVelCons() {
 }
 
 void TOP::SetAngVelCons() {
-  size_t state_bd_dim = 7;
   size_t row_idx = 2*state_dim + 20*(N-1) + 4*state_bd_dim*(N-1) + 11*(N-1);
+
+  // col_idx tracks the slack variable under consideration
   size_t col_idx = state_dim*N + 2*control_dim*(N-1) + 2*state_bd_dim*(N-1) + 4*(N-1);
 
   for (size_t ii = 0; ii < N-1; ii++) {
-    upper_bound.segment(row_idx, 3).setZero();
     // -sk-wk <= 0.
+    upper_bound.segment(row_idx, 3).setZero();
     for (size_t jj = 0; jj < 3; jj++) {
       linear_con_mat.insert(row_idx+jj, state_dim*(ii+1)+10+jj) = -1;
       linear_con_mat.insert(row_idx+jj, col_idx+jj) = -1;
@@ -603,6 +619,7 @@ void TOP::SetAngVelCons() {
 
     row_idx += 3;
 
+    // sum(sik) - zk <= v_max
     upper_bound(row_idx) = desired_omega_;
     for (size_t jj = 0; jj < 3; jj++) {
       linear_con_mat.insert(row_idx, col_idx+jj) = 1;
@@ -776,14 +793,13 @@ void TOP::UpdateBoundaryCons() {
 
 void TOP::UpdateControlCons() {
   size_t row_idx = 2*state_dim;
-  size_t col_idx = state_dim*N + control_dim*(N-1);
 
   for (size_t ii = 0; ii < N-1; ii++) {
     // Linear accelereation
     row_idx += 6;
     upper_bound(row_idx) = mass*desired_accel_;
+
     row_idx++;
-    col_idx += 3;
 
     // Angular acceleration
     row_idx += 6;
@@ -794,7 +810,6 @@ void TOP::UpdateControlCons() {
     upper_bound(row_idx) = M_.minCoeff();
 
     row_idx++;
-    col_idx += 3;
   }
 }
 
@@ -810,7 +825,6 @@ void TOP::UpdateStateCons() {
   x_min(2) = pos_min_(2);
 
   size_t row_idx = 2*state_dim + 20*(N-1);
-  size_t col_idx = state_dim*N + 2*control_dim*(N-1);
 
   // State LB
   for (size_t ii = 0; ii < N-1; ii++) {
@@ -820,15 +834,13 @@ void TOP::UpdateStateCons() {
     }
 
     row_idx += 3;
-    col_idx += 3;
 
     // Quaternion limits
     for (size_t jj = 0; jj < 4; jj++) {
-      upper_bound(row_idx+6+jj) = -x_min(6+jj);
+      upper_bound(row_idx+jj) = -x_min(6+jj);
     }
 
     row_idx += 4;
-    col_idx += 4;
   }
 
   // State UB
@@ -838,30 +850,56 @@ void TOP::UpdateStateCons() {
     }
 
     row_idx += 3;
-    col_idx += 3;
 
     for (size_t jj = 0; jj < 4; jj++) {
-      upper_bound(row_idx+6+jj) = x_max(6+jj);
+      upper_bound(row_idx+jj) = x_max(6+jj);
     }
 
     row_idx += 4;
-    col_idx += 4;
   }
 }
 
 void TOP::UpdateVelCons() {
-  // TODO(acauligi)
+  size_t row_idx = 2*state_dim + 20*(N-1) + 4*state_bd_dim*(N-1);
+
+  // Linear velocity constraints
+  for (size_t ii = 0; ii < N-1; ii++) {
+    row_idx += 6;
+
+    upper_bound(row_idx) = desired_vel_;
+
+    row_idx++;
+  }
 }
 
 void TOP::UpdateAngVelCons() {
-  // TODO(acauligi)
+  size_t row_idx = 2*state_dim + 20*(N-1) + 4*state_bd_dim*(N-1) + 11*(N-1);
+
+  for (size_t ii = 0; ii < N-1; ii++) {
+    row_idx += 6;
+
+    upper_bound(row_idx) = desired_omega_;
+
+    row_idx++;
+  }
 }
 
 void TOP::UpdateTrustRegionCons() {
-  size_t row_idx = 2*state_dim + control_dim*(N-1) + 4*state_dim*(N-1) + state_dim*(N-1);
+  size_t row_idx = 2*state_dim + 20*(N-1) + 4*state_bd_dim*(N-1) + 2*11*(N-1) +
+    state_dim*(N-1);
+
   for (size_t ii = 0; ii < N-1; ii++) {
-    upper_bound(row_idx+2*state_dim) = Delta;
-    row_idx += (2*state_dim+1);
+    // -sk-Xk <= -Xkp
+    upper_bound.segment(row_idx, state_dim) = -Xprev[ii+1];
+    row_idx += (state_dim);
+
+    // Xk-sk <= Xkp
+    upper_bound.segment(row_idx, state_dim) = Xprev[ii+1];
+    row_idx += (state_dim);
+
+    // \sum(sk)-zk \leq Delta
+    upper_bound(row_idx) = Delta;
+    row_idx++;
   }
 }
 
@@ -883,13 +921,11 @@ void TOP::UpdateObsCons() {
       support_vec = support_vectors[n_obs*ii+jj];
 
       upper_bound(row_idx) = obs_ub[n_obs*ii+jj];
-      linear_con_mat.insert(row_idx, col_idx) = -1;
       for (size_t kk = 0; kk < 3; kk++) {
         linear_con_mat.coeffRef(row_idx, state_dim*(ii+1)+kk) = support_vec(kk);
       }
 
       row_idx++;
-      col_idx++;
     }
   }
 }
