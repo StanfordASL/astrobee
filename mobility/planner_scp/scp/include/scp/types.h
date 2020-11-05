@@ -41,11 +41,16 @@ typedef Eigen::Matrix<decimal_t, 2, 1> Vec2;
 typedef Eigen::Matrix<decimal_t, 3, 1> Vec3;
 typedef Eigen::Matrix<decimal_t, 4, 1> Vec4;
 typedef Eigen::Matrix<decimal_t, 6, 1> Vec6;
+typedef Eigen::Matrix<decimal_t, 7, 1> Vec7;
 typedef Eigen::Matrix<decimal_t, 13, 1> Vec13;
 
 typedef Eigen::Matrix<decimal_t, 3, 3> Mat3;
 typedef Eigen::Matrix<decimal_t, 4, 4> Mat4;
+typedef Eigen::Matrix<decimal_t, 6, 6> Mat6;
+typedef Eigen::Matrix<decimal_t, 7, 7> Mat7;
 typedef Eigen::Matrix<decimal_t, 13, 13> Mat13;
+typedef Eigen::Matrix<decimal_t, 6, 3> Mat6x3;
+typedef Eigen::Matrix<decimal_t, 7, 3> Mat7x3;
 typedef Eigen::Matrix<decimal_t, 13, 6> Mat13x6;
 
 typedef Eigen::DiagonalMatrix<decimal_t, 6> DiagMat6;
@@ -53,8 +58,11 @@ typedef Eigen::DiagonalMatrix<decimal_t, 13> DiagMat13;
 
 typedef std::vector<Vec3, Eigen::aligned_allocator<Vec3>> Vec3Vec;
 typedef std::vector<Vec6, Eigen::aligned_allocator<Vec6>> Vec6Vec;
+typedef std::vector<Vec7, Eigen::aligned_allocator<Vec7>> Vec7Vec;
 typedef std::vector<Vec13, Eigen::aligned_allocator<Vec13>> Vec13Vec;
+typedef std::vector<Mat7, Eigen::aligned_allocator<Mat7>> Mat7Vec;
 typedef std::vector<Mat13, Eigen::aligned_allocator<Mat13>> Mat13Vec;
+typedef std::vector<Mat7x3, Eigen::aligned_allocator<Mat7x3>> Mat7x3Vec;
 typedef std::vector<Mat13x6, Eigen::aligned_allocator<Mat13x6>> Mat13x6Vec;
 
 typedef Eigen::Matrix<decimal_t, Eigen::Dynamic, 1> VecD;

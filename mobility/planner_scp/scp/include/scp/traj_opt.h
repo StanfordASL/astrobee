@@ -27,6 +27,7 @@
 
 #include <vector>
 #include <string>
+#include <cmath>
 
 #include "OsqpEigen/OsqpEigen.h"
 
@@ -35,6 +36,8 @@ namespace scp {
 class TOP {
  public:
   size_t state_dim;
+  size_t state_dim_lin;
+  size_t state_dim_nlin;
   size_t control_dim;
   size_t state_bd_dim;
   size_t N;
@@ -91,9 +94,11 @@ class TOP {
   decimal_t convergence_threshold;
   VecD qp_soln;
 
-  Vec13Vec fs;
-  Mat13Vec As;
-  Mat13x6Vec Bs;
+  Vec7Vec fs;
+  Mat7Vec As;
+  Mat7x3Vec Bs;
+  Mat6 Ak_di;     // Ak for double integrator
+  Mat6x3 Bk_di;   // Bk for double integrator
 
   std::vector<Eigen::AlignedBox3d>* keep_in_zones_;
   std::vector<Eigen::AlignedBox3d>* keep_out_zones_;
@@ -126,9 +131,10 @@ class TOP {
 
   void ComputeSignedDistances();
   void InitTrajStraightline();
-  void UpdateF(Vec13& f, Vec13& X, Vec6& U);
-  void UpdateA(Mat13& A, Vec13& X, Vec6& U);
-  void UpdateB(Mat13x6& B, Vec13& X, Vec6& U);
+  void UpdateDoubleIntegrator();
+  void UpdateF(Vec7& f, Vec13& X, Vec6& U);
+  void UpdateA(Mat7& A, Vec13& X, Vec6& U);
+  void UpdateB(Mat7x3& B, Vec13& X, Vec6& U);
   void UpdateDynamics();
 
   void SetHessianMatrix();
@@ -140,7 +146,8 @@ class TOP {
   void SetVelCons();
   void SetAngVelCons();
 
-  void SetDynamicsMatrices();
+  void SetLinearDynamicsCons();
+  void SetDynamicsCons();
   void SetTrustRegionCons();
   void SetObsCons();
 

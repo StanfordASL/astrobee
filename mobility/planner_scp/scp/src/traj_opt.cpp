@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <iostream>
 #include <vector>
+#include <cmath>
 
 namespace scp {
 
@@ -28,6 +29,8 @@ TOP::TOP(decimal_t Tf_, int N_)
   : N(N_), Tf(Tf_) {
   free_final_state = false;
   state_dim = 13;
+  state_dim_lin = 6;
+  state_dim_nlin = 7;
   control_dim = 6;
   state_bd_dim = 7;   // State LB and UB only enforced for pos. and orientation
   dh = Tf / N;
@@ -194,7 +197,8 @@ void TOP::UpdateProblemDimension(size_t N_) {
   SetVelCons();
   SetAngVelCons();
 
-  SetDynamicsMatrices();
+  SetLinearDynamicsCons();
+  SetDynamicsCons();
   SetTrustRegionCons();
   SetObsCons();
 
@@ -269,10 +273,22 @@ void TOP::ComputeSignedDistances() {
   }
 }
 
-void TOP::UpdateF(Vec13& f, Vec13& X, Vec6& U) {
+void TOP::UpdateDoubleIntegrator() {
+  Ak_di.setZero();
+  Bk_di.setZero();
+
+  for (size_t ii = 0; ii < 3; ii++) {
+    Ak_di(ii, ii) = 1.;
+    Ak_di(ii, 3+ii) = dh;
+    Ak_di(ii+3, ii+3) = 1;
+
+    Bk_di(ii, ii) = 0.5 * pow(dh, 2) / mass;
+    Bk_di(3+ii, ii) = dh / mass;
+  }
+}
+
+void TOP::UpdateF(Vec7& f, Vec13& X, Vec6& U) {
   f.setZero();
-  f.segment(0, 3) = X.segment(3, 3);
-  f.segment(3, 3) = 1/mass * U.segment(0, 3);
 
   Vec4 q = X.segment(6, 4);
   decimal_t q_norm = q.norm();
@@ -291,16 +307,12 @@ void TOP::UpdateF(Vec13& f, Vec13& X, Vec6& U) {
             -wx, -wy, -wz, 0;
 
   // Eq. 305 in A Survey of Attitude Representations; Shuster 1993
-  f.segment(6, 4) = 0.5 * omega_skew * q;
-  f.segment(10, 3) = Jinv*(U.segment(3, 3) - w.cross(J*w));
+  f.segment(0, 4) = 0.5 * omega_skew * q;
+  f.segment(4, 3) = Jinv*(U.segment(3, 3) - w.cross(J*w));
 }
 
-void TOP::UpdateA(Mat13& A, Vec13& X, Vec6& U) {
+void TOP::UpdateA(Mat7& A, Vec13& X, Vec6& U) {
   A.setZero();
-
-  for (size_t jj = 0; jj < 3; jj++) {
-    A(jj, 3+jj) = 1;
-  }
 
   decimal_t wx = X(10);
   decimal_t wy = X(11);
@@ -312,7 +324,7 @@ void TOP::UpdateA(Mat13& A, Vec13& X, Vec6& U) {
             wy, -wx, 0, wz,
             -wx, -wy, -wz, 0;
 
-  A.block(6, 6, 4, 4) = omega_skew;
+  A.block(0, 0, 4, 4) = omega_skew;
 
   decimal_t Jxx = J(0, 0);
   decimal_t Jyy = J(1, 1);
@@ -323,17 +335,13 @@ void TOP::UpdateA(Mat13& A, Vec13& X, Vec6& U) {
               -(Jxx-Jzz)*wz/Jyy, 0, -(Jxx-Jzz)*wx/Jyy,
               (Jxx-Jyy)*wy/Jzz, (Jxx-Jyy)*wx/Jzz, 0;
 
-  A.block(10, 10, 3, 3) = quat_skew;
+  A.block(4, 4, 3, 3) = quat_skew;
 }
 
-void TOP::UpdateB(Mat13x6& B, Vec13& X, Vec6& U) {
+void TOP::UpdateB(Mat7x3& B, Vec13& X, Vec6& U) {
   B.setZero();
 
-  for (size_t jj = 0; jj < 3; jj++) {
-    B(3+jj, jj) = 1 / mass;
-  }
-
-  B.block(10, 3, 3, 3) = Jinv;
+  B.block(4, 3, 3, 3) = Jinv;
 }
 
 void TOP::UpdateDynamics() {
@@ -638,17 +646,53 @@ void TOP::SetAngVelCons() {
   }
 }
 
-void TOP::SetDynamicsMatrices() {
-  Mat13 eye;
+void TOP::SetLinearDynamicsCons() {
+  size_t row_idx = 2*state_dim + 20*(N-1) + 4*state_bd_dim*(N-1) + 2*11*(N-1);
+  size_t control_dim_lin = static_cast<size_t>(control_dim/2);
+
+  // Ak*xk+Bk*uk - x_{k+1} = 0
+  for (size_t ii = 0; ii < N-1; ii++) {
+    for (size_t jj = 0; jj < state_dim_lin; jj++) {
+      linear_con_mat.coeffRef(row_idx+jj, state_dim*(ii+1)+jj) = -1.0;
+
+      for (size_t kk = 0; kk < state_dim_lin; kk++) {
+        if (Ak_di(jj, kk) == 0) {
+          continue;
+        }
+
+        linear_con_mat.coeffRef(row_idx+jj, state_dim*ii+kk)     = Ak_di(jj, kk);
+      }
+
+      for (size_t kk = 0; kk < control_dim_lin; kk++) {
+        if (Bk_di(jj, kk) == 0) {
+          continue;
+        }
+
+        linear_con_mat.coeffRef(row_idx+jj, state_dim*N+control_dim*ii+kk) = Bk_di(jj, kk);
+      }
+    }
+
+    lower_bound.segment(row_idx, state_dim_lin).setZero();
+    upper_bound.segment(row_idx, state_dim_lin).setZero();
+    row_idx += state_dim_lin;
+  }
+}
+
+void TOP::SetDynamicsCons() {
+  Mat7 eye;
   eye.setIdentity();
 
-  Mat13 Ak;
-  Mat13 Akp1;
-  Mat13x6 Bk;
-  Mat13x6 Bkp1;
-  Vec13 ck;
+  Mat7 Ak;
+  Mat7 Akp1;
+  Mat7x3 Bk;
+  Mat7x3 Bkp1;
+  Vec7 ck;
+  Vec7 Xprev_k, Xprev_kp1;
+  Vec7 fk, fkp1;
+  Vec3 Uprev_k, Uprev_kp1;
 
-  size_t row_idx = 2*state_dim + 20*(N-1) + 4*state_bd_dim*(N-1) + 2*11*(N-1);
+  size_t row_idx = 2*state_dim + 20*(N-1) + 4*state_bd_dim*(N-1) + 2*11*(N-1) + state_dim_lin*(N-1);
+  size_t control_dim_nlin = static_cast<size_t>(control_dim/2);
 
   // Trapezoidal integration for ii = 0,..,N-3
   for (size_t ii = 0; ii < N-2; ii++) {
@@ -660,45 +704,57 @@ void TOP::SetDynamicsMatrices() {
     Bk    = 0.5*dh*Bs[ii];
     Bkp1  = 0.5*dh*Bs[ii+1];
 
-    for (size_t jj = 0; jj < state_dim; jj++) {
-      for (size_t kk = 0; kk < state_dim; kk++) {
+    for (size_t jj = 0; jj < state_dim_nlin; jj++) {
+      for (size_t kk = 0; kk < state_dim_nlin; kk++) {
           linear_con_mat.coeffRef(row_idx+jj, state_dim*ii+kk)     = Ak(jj, kk);
           linear_con_mat.coeffRef(row_idx+jj, state_dim*(ii+1)+kk) = Akp1(jj, kk);
       }
 
-      for (size_t kk = 0; kk < control_dim; kk++) {
-        linear_con_mat.coeffRef(row_idx+jj, state_dim*N+control_dim*ii+kk)      = Bk(jj, kk);
-        linear_con_mat.coeffRef(row_idx+jj, state_dim*N+control_dim*(ii+1)+kk)  = Bkp1(jj, kk);
+      for (size_t kk = 0; kk < control_dim_nlin; kk++) {
+        // add +3 to column index to grab (Mx,My,Mz) component
+        linear_con_mat.coeffRef(row_idx+jj, state_dim*N+control_dim*ii+3+kk)      = Bk(jj, kk);
+        linear_con_mat.coeffRef(row_idx+jj, state_dim*N+control_dim*(ii+1)+3+kk)  = Bkp1(jj, kk);
       }
     }
 
     // Assign ck vectors
-    ck = 0.5*dh*(
-      As[ii]*Xprev[ii] + Bs[ii]*Uprev[ii]
-      + As[ii+1]*Xprev[ii+1] + Bs[ii+1]*Uprev[ii+1]
-      - fs[ii] - fs[ii+1]);
-    lower_bound.segment(row_idx, state_dim) = ck;
-    upper_bound.segment(row_idx, state_dim) = ck;
+    Xprev_k = Xprev[ii].segment(6, 7);
+    Xprev_kp1 = Xprev[ii+1].segment(6, 7);
+    Uprev_k = Uprev[ii].segment(3, 3);
+    Uprev_kp1 = Uprev[ii+1].segment(3, 3);
+    fk = fs[ii].segment(6, 7);
+    fkp1 = fs[ii+1].segment(6, 7);
 
-    row_idx += state_dim;
+    ck = 0.5*dh*(
+      As[ii]*Xprev_k + Bs[ii]*Uprev_k
+      + As[ii+1]*Xprev_kp1 + Bs[ii+1]*Uprev_kp1
+      - fk - fkp1);
+    lower_bound.segment(row_idx, state_dim_nlin) = ck;
+    upper_bound.segment(row_idx, state_dim_nlin) = ck;
+
+    row_idx += state_dim_nlin;
   }
 
   // Euler integration for last step
   Ak = dh*As[N-2] + eye;
   Akp1 = -eye;
   Bk = dh*Bs[N-2];
-  ck = dh*(As[N-2]*Xprev[N-2] + Bs[N-2]*Uprev[N-2] - fs[N-2]);
-  for (size_t jj = 0; jj < state_dim; jj++) {
-    for (size_t kk = 0; kk < state_dim; kk++) {
+  fk = fs[N-2].segment(6, 7);
+  Xprev_k = Xprev[N-2].segment(6, 7);
+  Uprev_k = Uprev[N-2].segment(3, 3);
+
+  ck = dh*(As[N-2]*Xprev_k + Bs[N-2]*Uprev_k - fk);
+  for (size_t jj = 0; jj < state_dim_nlin; jj++) {
+    for (size_t kk = 0; kk < state_dim_nlin; kk++) {
       linear_con_mat.coeffRef(row_idx+jj, state_dim*(N-2)+kk)      = Ak(jj, kk);
       linear_con_mat.coeffRef(row_idx+jj, state_dim*(N-1)+kk)      = Akp1(jj, kk);
     }
-    for (size_t kk = 0; kk < control_dim; kk++) {
-      linear_con_mat.coeffRef(row_idx+jj, state_dim*N+control_dim*(N-2)+kk);
+    for (size_t kk = 0; kk < control_dim_nlin; kk++) {
+      linear_con_mat.coeffRef(row_idx+jj, state_dim*N+control_dim*(N-2)+kk)   = Bk(jj, kk);
     }
   }
-  lower_bound.segment(row_idx, state_dim) = ck;
-  upper_bound.segment(row_idx, state_dim) = ck;
+  lower_bound.segment(row_idx, state_dim_nlin) = ck;
+  upper_bound.segment(row_idx, state_dim_nlin) = ck;
 }
 
 void TOP::SetTrustRegionCons() {
@@ -910,8 +966,6 @@ void TOP::UpdateGradient() {
 void TOP::UpdateObsCons() {
   size_t row_idx = 2*state_dim + 20*(N-1) + 4*7*(N-1) + 2*11*(N-1) +
     state_dim*(N-1) + (3*state_dim+2)*(N-1);
-  size_t col_idx = state_dim*N + 2*control_dim*(N-1) +
-    2*7*(N-1) + 2*4*(N-1)  + (state_dim+1)*(N-1);
   size_t n_obs = keep_out_zones_->size();
 
   Vec3 support_vec;
@@ -950,8 +1004,8 @@ decimal_t TOP::AccuracyRatio() {
 
   Vec13 X_k;
   Vec6 U_k;
-  Vec13 f_k;
-  Vec13 linearized;
+  Vec7 f_k;
+  Vec7 linearized;
 
   // dynamics
   for (size_t ii = 0; ii < N-1; ii++) {
@@ -965,7 +1019,14 @@ decimal_t TOP::AccuracyRatio() {
 
     // TODO(acauligi): determine whether A_kp,B_kp,f_kp need to be recomputed
 
-    linearized = fs[ii] + As[ii]*(X_k-Xprev[ii]) + Bs[ii]*(U_k-Uprev[ii]);
+  Vec7 ck;
+  Vec7 X_k, Xprev_k;
+  Vec7 f_k;
+  Vec3 U_k, Uprev_k;
+
+    linearized = fs[ii] +
+      As[ii]*(X_k.segment(7, 6)-Xprev[ii].segment(7, 6)) +
+      Bs[ii]*(U_k.segment(3, 3)-Uprev[ii].segment(3, 3));
     num += (f_k - linearized).norm();
     den += linearized.norm();
   }
@@ -1043,7 +1104,7 @@ bool TOP::Solve() {
   for (size_t kk = 0; kk < max_iter; kk++) {
     // update constraint matrix
     UpdateDynamics();
-    SetDynamicsMatrices();
+    SetDynamicsCons();
     UpdateTrustRegionCons();
     UpdateGradient();
     UpdateObsCons();
