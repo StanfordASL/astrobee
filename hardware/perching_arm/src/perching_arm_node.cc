@@ -256,10 +256,11 @@ class PerchingArmNode : public ff_util::FreeFlyerNodelet {
     double perc = -100.0;
 
     // Allocate the joint state message
-    msg_.name.resize(7);
-    msg_.position.resize(7);
-    msg_.velocity.resize(7);
-    msg_.effort.resize(7);
+    size_t gpg_n_bytes = 6;     // TODO(acauligi): convert from hard coded value?
+    msg_.name.resize(7+gpg_n_bytes);
+    msg_.position.resize(7+gpg_n_bytes);
+    msg_.velocity.resize(7+gpg_n_bytes);
+    msg_.effort.resize(7+gpg_n_bytes);
     // Package all joint states, including the left and right proximal
     // and distal joints of the gripper (for visualization reasons)
     msg_.header.stamp = ros::Time::now();
@@ -302,7 +303,6 @@ class PerchingArmNode : public ff_util::FreeFlyerNodelet {
     // TODO(acauligi): check math with Arul
     // Stuff gecko perching gripper into joint state values
     double* SD_data;
-    size_t gpg_n_bytes = 6;     // TODO(acauligi): convert from hard coded value?
     SD_data = new double[gpg_n_bytes];
     arm_.ConstructDataPacket(SD_data, gpg_n_bytes);
 

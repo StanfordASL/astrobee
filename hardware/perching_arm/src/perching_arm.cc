@@ -301,7 +301,7 @@ void PerchingArm::ConstructDataPacket(double* data, size_t len) {
     // STATUS_H = [TEMP -   -   -   -   -   - EXP]
     byte0[0]  = (raw_.grip.overtemperature_flag << 7) | raw_.grip.experiment_in_progress;
 
-    // STATUS_L = [- FILE - - AUTO - WRIST ADH]
+    // STATUS_L = [- - FILE - AUTO - WRIST ADH]
     byte0[1]  = (raw_.grip.file_is_open << 5) | (raw_.grip.automatic_mode_enable << 3) |
                 (raw_.grip.wrist_lock << 1) | raw_.grip.adhesive_engage;
 
