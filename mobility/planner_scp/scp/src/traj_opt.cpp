@@ -27,13 +27,16 @@ namespace scp {
 
 TOP::TOP(decimal_t Tf_, int N_)
   : N(N_), Tf(Tf_) {
-  free_final_state = false;
   state_dim = 13;
   state_dim_lin = 6;
   state_dim_nlin = 7;
   control_dim = 6;
   state_bd_dim = 7;   // State LB and UB only enforced for pos. and orientation
   dh = Tf / N;
+
+  free_final_state = false;
+  lin_vel_strict = false;   // true=enforce cons tight, false=use slack vars
+  ang_vel_strict = false;   // true=enforce cons tight, false=use slack vars
 
   solver = NULL;
 
@@ -110,7 +113,6 @@ size_t TOP::GetNumTOPVariables() {
 
 size_t TOP::GetNumTOPConstraints() {
   size_t boundary_cons = 2*state_dim;
-  size_t control_cons = control_dim*(N-1);    // TODO(acauligi): what are these?
   size_t control_slack_cons = 2*10*(N-1);
   size_t state_UB_slack_cons = 2*7*(N-1);
   size_t state_LB_slack_cons = 2*7*(N-1);
@@ -119,8 +121,7 @@ size_t TOP::GetNumTOPConstraints() {
   size_t dynamics_cons = state_dim*(N-1);
   size_t trust_region_slack_cons = (3*state_dim+2)*(N-1);
   size_t obs_avoidance_slack_cons = 2*keep_out_zones_->size()*(N-1);
-  return boundary_cons + control_cons +
-    control_slack_cons +
+  return boundary_cons + control_slack_cons +
     state_UB_slack_cons + state_LB_slack_cons +
     vel_norm_slack_cons + omega_norm_slack_cons +
     dynamics_cons + trust_region_slack_cons + obs_avoidance_slack_cons;
@@ -551,6 +552,10 @@ void TOP::SetStateCons() {
 
   // Slack variables non-negative constraints
   upper_bound.segment(row_idx, 2*state_bd_dim*(N-1)).setZero();
+  if (state_con_strict) {
+    lower_bound.segment(row_idx, 2*state_bd_dim*(N-1)).setZero();
+  }
+
   col_idx = state_dim*N + 2*control_dim*(N-1);
   for (size_t ii = 0; ii < 2*state_bd_dim*(N-1); ii++) {
     linear_con_mat.insert(row_idx+ii, col_idx+ii) = -1;
@@ -596,7 +601,11 @@ void TOP::SetVelCons() {
 
   // Slack variables non-negative constraints
   col_idx = state_dim*N + 2*control_dim*(N-1) + 2*state_bd_dim*(N-1);
-  upper_bound.segment(col_idx, 4*(N-1)).setZero();
+  upper_bound.segment(row_idx, 4*(N-1)).setZero();
+  if (lin_vel_strict) {
+    // slack vars are set to 0 if constraint is to be strictly enforced
+    lower_bound.segment(row_idx, 4*(N-1)).setZero();
+  }
   for (size_t ii = 0; ii < 4*(N-1); ii++) {
     linear_con_mat.insert(row_idx+ii, col_idx+ii) = -1;
   }
@@ -641,6 +650,10 @@ void TOP::SetAngVelCons() {
   // Slack variables non-negative constraints
   col_idx = state_dim*N + 2*control_dim*(N-1) + 2*state_bd_dim*(N-1) + 4*(N-1);
   upper_bound.segment(row_idx, 4*(N-1)).setZero();
+  if (ang_vel_strict) {
+    // slack vars are set to 0 if constraint is to be strictly enforced
+    lower_bound.segment(row_idx, 4*(N-1)).setZero();
+  }
   for (size_t ii = 0; ii < 4*(N-1); ii++) {
     linear_con_mat.insert(row_idx+ii, col_idx+ii) = -1;
   }
@@ -913,6 +926,12 @@ void TOP::UpdateStateCons() {
 
     row_idx += 4;
   }
+
+  // Slack variables non-negative constraints
+  upper_bound.segment(row_idx, 2*state_bd_dim*(N-1)).setZero();
+  if (state_con_strict) {
+    lower_bound.segment(row_idx, 2*state_bd_dim*(N-1)).setZero();
+  }
 }
 
 void TOP::UpdateVelCons() {
@@ -926,6 +945,13 @@ void TOP::UpdateVelCons() {
 
     row_idx++;
   }
+
+  // Slack variables non-negative constraints
+  upper_bound.segment(row_idx, 4*(N-1)).setZero();
+  if (lin_vel_strict) {
+    // slack vars are set to 0 if constraint is to be strictly enforced
+    lower_bound.segment(row_idx, 4*(N-1)).setZero();
+  }
 }
 
 void TOP::UpdateAngVelCons() {
@@ -937,6 +963,12 @@ void TOP::UpdateAngVelCons() {
     upper_bound(row_idx) = desired_omega_;
 
     row_idx++;
+  }
+
+  upper_bound.segment(row_idx, 4*(N-1)).setZero();
+  if (ang_vel_strict) {
+    // slack vars are set to 0 if constraint is to be strictly enforced
+    lower_bound.segment(row_idx, 4*(N-1)).setZero();
   }
 }
 
