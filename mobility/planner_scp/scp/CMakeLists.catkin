@@ -17,6 +17,8 @@
 
 cmake_minimum_required(VERSION 2.8.3)
 
+option(NASA "Use NASA's wonderful build system" ON)
+
 project(scp)
 
 set(CMAKE_CXX_STANDARD 11)
@@ -29,24 +31,48 @@ find_package(Bullet REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system)
 
+if (NOT NASA)
+  catkin_package(
+    INCLUDE_DIRS include
+    LIBRARIES ${PROJECT_NAME}
+#  CATKIN_DEPENDS roscpp visualization_msgs
+#  DEPENDS system_lib
+  )
+endif()
+
 include_directories(SYSTEM
   include 
   ${BULLET_INCLUDE_DIRS} 
   ${EIGEN3_INCLUDE_DIR}
   ${Boost_INCLUDE_DIRS}
+  ${catkin_INCLUDE_DIRS}
 )
 
-add_library(scp 
+add_library(${PROJECT_NAME}
   src/bullet_collision_checker.cpp
   src/traj_opt.cpp
 )
 
-target_link_libraries(scp
+target_link_libraries(${PROJECT_NAME}
   OsqpEigen::OsqpEigen
   ${BULLET_LIBRARIES}
+  ${catkin_LIBRARIES}
 )
 
-add_executable(test1 test/test1.cpp) 
-target_link_libraries(test1
-  scp
-)
+if (NOT NASA)
+  install(
+    TARGETS ${PROJECT_NAME}
+    ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+    LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+    RUNTIME DESTINATION ${CATKIN_GLOBAL_BIN_DESTINATION}
+  )
+
+  install(DIRECTORY include/scp/
+    DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
+  )
+
+  add_executable(test1 test/test1.cpp)
+  target_link_libraries(test1
+    scp
+  )
+endif()
