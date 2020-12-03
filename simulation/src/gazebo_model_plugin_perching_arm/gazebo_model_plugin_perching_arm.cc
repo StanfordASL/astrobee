@@ -17,8 +17,10 @@
  */
 
 // ROS includes
-#include <ros/ros.h>
 #include <time.h>
+
+#include <ros/ros.h>
+#include <ros/console.h>
 
 // Gazebo includes
 #include <astrobee_gazebo/astrobee_gazebo.h>
@@ -34,6 +36,7 @@
 
 // STL includes
 #include <string>
+#include <iostream>
 
 namespace gazebo {
 
@@ -151,12 +154,15 @@ class GazeboModelPluginPerchingArm : public FreeFlyerModelPlugin {
     joints_.push_back(GetModel()->GetJoint(
       bay_+"_gripper_right_distal_joint"));
 
+    // Number of double's to be sent to /joint_states for gripper
+    gpg_n_bytes = 6;
+
     // Avoid resizing in each callback
     msg_.header.frame_id =  GetModel()->GetName();
-    msg_.name.resize(joints_.size() + 1);
-    msg_.position.resize(joints_.size() + 1);
-    msg_.velocity.resize(joints_.size() + 1);
-    msg_.effort.resize(joints_.size() + 1);
+    msg_.name.resize(joints_.size() + 1 + gpg_n_bytes);
+    msg_.position.resize(joints_.size() + 1 + gpg_n_bytes);
+    msg_.velocity.resize(joints_.size() + 1 + gpg_n_bytes);
+    msg_.effort.resize(joints_.size() + 1 + gpg_n_bytes);
 
     // Create a joint state publisher for the arm
     pub_ = nh->advertise<sensor_msgs::JointState>("joint_states", 100, true);
@@ -199,6 +205,22 @@ class GazeboModelPluginPerchingArm : public FreeFlyerModelPlugin {
         nh->advertiseService(SERVICE_HARDWARE_PERCHING_ARM_CALIBRATE,
                              &GazeboModelPluginPerchingArm::CalibrateGripperCallback,
                             this);
+
+    last_status_read_time = 0x00;
+    error_status = 0x00;
+    adhesive_engage = 0x00;
+    wrist_lock = 0x00;
+    automatic_mode_enable = 0x00;
+    experiment_in_progress = 0x00;
+    overtemperature_flag = 0x00;
+    file_is_open = 0x00;
+    // exp_idx;
+    delay_ms = 250;
+    read_SD = false;
+    // Clear currently stored experiment line
+    for (size_t ii = 0; ii < 35; ii++) {
+      line[ii] = '-';
+    }
   }
 
   // Called on simulation reset
@@ -323,6 +345,52 @@ class GazeboModelPluginPerchingArm : public FreeFlyerModelPlugin {
         else
           NODELET_WARN("Joint: only position control is supported");
       // Catch all invalid joint states
+      } else if (msg.name[i] == "gecko_gripper_open") {
+        continue;
+      } else if (msg.name[i] == "gecko_gripper_close") {
+        continue;
+      } else if (msg.name[i] == "gecko_gripper_engage") {
+        adhesive_engage = 0x01;
+      } else if (msg.name[i] == "gecko_gripper_disengage") {
+        adhesive_engage = 0x00;
+      } else if (msg.name[i] == "gecko_gripper_lock") {
+        ROS_WARN("gecko_gripper_lock received!");
+        wrist_lock = 0x01;
+      } else if (msg.name[i] == "gecko_gripper_unlock") {
+        wrist_lock = 0x00;
+      } else if (msg.name[i] == "gecko_gripper_enable_auto") {
+        automatic_mode_enable = 0x01;
+      } else if (msg.name[i] == "gecko_gripper_disable_auto") {
+        automatic_mode_enable = 0x00;
+      } else if (msg.name[i] == "gecko_gripper_toggle_auto") {
+        if (automatic_mode_enable) {
+          automatic_mode_enable = 0x00;
+        } else {
+          automatic_mode_enable = 0x01;
+        }
+      } else if (msg.name[i] == "gecko_gripper_mark_gripper") {
+        experiment_in_progress = true;
+        file_is_open = true;
+      } else if (msg.name[i] == "gecko_gripper_set_delay") {
+        continue;
+      } else if (msg.name[i] == "gecko_gripper_open_exp") {
+        file_is_open = true;
+        continue;
+      } else if (msg.name[i] == "gecko_gripper_next_record") {
+        continue;
+      } else if (msg.name[i] == "gecko_gripper_seek_record") {
+        continue;
+      } else if (msg.name[i] == "gecko_gripper_close_exp") {
+        experiment_in_progress = false;
+        file_is_open = false;
+      } else if (msg.name[i] == "gecko_gripper_status") {
+        continue;
+      } else if (msg.name[i] == "gecko_gripper_record") {
+        continue;
+      } else if (msg.name[i] == "gecko_gripper_exp") {
+        continue;
+      } else if (msg.name[i] == "gecko_gripper_delay") {
+        continue;
       }
     }
   }
@@ -349,8 +417,24 @@ class GazeboModelPluginPerchingArm : public FreeFlyerModelPlugin {
     msg_.position[i] = grip_;
     msg_.velocity[i] = 0;
     msg_.effort[i] = 0;
-    // Publish the joint state
+
+    double* SD_data;
+    // In perching_arm_node.cc, following line would use actual gripper packet data
+    SD_data = new double[gpg_n_bytes];
+
+    ConstructDataPacket(SD_data, gpg_n_bytes);
+
+    i++;
+    for (size_t jj = 0; jj < gpg_n_bytes; jj++) {
+      msg_.name[i+jj] = "gpg_data_" + std::to_string(jj);
+      msg_.position[i+jj] = *(SD_data+jj);
+      msg_.velocity[i+jj] = 0.;
+      msg_.effort[i+jj] = 0.;
+    }
+
     pub_.publish(msg_);
+    // Publish the joint state
+    delete[] SD_data;
   }
 
   // Set the pan velocity
@@ -414,6 +498,94 @@ class GazeboModelPluginPerchingArm : public FreeFlyerModelPlugin {
     return true;
   }
 
+  // Calibrate the gripper
+  void ConstructDataPacket(double* data, size_t len) {
+    // Check size of double and allocated memory size of data
+    if (sizeof(double) != 8 || len != 6) {
+      return;
+    }
+
+    // Clear data held inside array
+    for (size_t ii = 0; ii < sizeof(double)*len; ii++) {
+      *(reinterpret_cast<char*>(data) + ii) = 0x00;
+    }
+
+    unsigned char* msg_ptr;
+    unsigned char byte0[sizeof(double)];
+    byte0[0] = 0xFF;
+    byte0[1] = 0xFF;
+    byte0[2] = 0xFD;
+
+    if (read_SD) {
+      byte0[3] = 0x01;
+    } else {
+      byte0[3] = 0x00;
+    }
+    byte0[3] = 0x01;
+
+    byte0[4] = (error_status) && 0xFF;
+    byte0[5] = (error_status >> 8) && 0xFF;
+    byte0[6] = (last_status_read_time) && 0xFF;
+    byte0[7] = (last_status_read_time >> 8) && 0xFF;
+
+    msg_ptr = reinterpret_cast<unsigned char*>(data+0);
+    for (size_t kk = 0; kk < sizeof(double); kk++) {
+      *(msg_ptr+kk) = byte0[kk];
+    }
+
+    // Clear byte0 value
+    for (size_t jj = 0; jj < sizeof(double); jj++) byte0[jj] = 0x00;
+
+    if (read_SD) {
+      // Write in 35 bytes of data from SD record line
+      // First four double values use full 8 bytes (i.e. 8*4); last one stuffs only 3 bytes
+      for (size_t ii = 1; ii < len; ii++) {
+        size_t stop_len = ii = len-1 ? 3 : sizeof(double);    // for last byte0, only assign first 3 bytes
+
+        for (size_t jj = 0; jj < stop_len; jj++) {
+          byte0[jj] = line[(ii-1)*sizeof(double)+jj];
+        }
+
+        msg_ptr = reinterpret_cast<unsigned char*>(data+ii);
+        for (size_t kk = 0; kk < sizeof(double); kk++) {
+          *(msg_ptr+kk) = byte0[kk];
+        }
+
+        // Clear byte0 value
+        for (size_t jj = 0; jj < sizeof(double); jj++) byte0[jj] = 0x00;
+      }
+    } else {
+      // Write in 2 bytes of status data
+      // STATUS_H = [TEMP -   -   -   -   -   - EXP]
+      byte0[0]  = (overtemperature_flag << 7) | experiment_in_progress;
+
+      // STATUS_L = [- - FILE - AUTO - WRIST ADH]
+      byte0[1]  = (file_is_open << 5) | (automatic_mode_enable << 3) |
+                  (wrist_lock << 1) | adhesive_engage;
+
+      msg_ptr = reinterpret_cast<unsigned char*>(data+1);
+      for (size_t kk = 0; kk < sizeof(double); kk++) {
+        *(msg_ptr+kk) = byte0[kk];
+      }
+
+      // Clear byte0 value
+      for (size_t jj =0; jj < sizeof(double); jj++) byte0[jj] = 0x00;
+
+      // Fill out rest of data values with 0x00
+      for (size_t jj = 2; jj < len; jj++) {
+        msg_ptr = reinterpret_cast<unsigned char*>(data+jj);
+        for (size_t kk = 0; kk < sizeof(double); kk++) {
+          *(msg_ptr+kk) = byte0[kk];
+        }
+      }
+    }
+
+    // Clear currently stored experiment line
+    for (size_t ii = 0; ii < 35; ii++) {
+      line[ii] = '-';
+    }
+  }
+
  private:
   double rate_;                   // Rate of joint state update
   std::string bay_;               // Prefix to avoid name collisions
@@ -435,6 +607,20 @@ class GazeboModelPluginPerchingArm : public FreeFlyerModelPlugin {
   ros::ServiceServer srv_ds_;    // Enable/Disable the distal   joint servo
   ros::ServiceServer srv_gs_;    // Enable/Disable the gripper  joint servo
   ros::ServiceServer srv_c_;     // Calibrate gripper
+
+  size_t gpg_n_bytes;
+  uint16_t last_status_read_time;
+  uint16_t error_status;
+  int16_t adhesive_engage;
+  int16_t wrist_lock;
+  int16_t automatic_mode_enable;
+  int16_t experiment_in_progress;
+  int16_t overtemperature_flag;
+  int16_t file_is_open;
+  uint16_t exp_idx;
+  uint16_t delay_ms;
+  char line[35];
+  bool read_SD;
 };
 
 // Register this plugin with the simulator

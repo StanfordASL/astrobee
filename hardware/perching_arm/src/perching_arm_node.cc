@@ -307,7 +307,7 @@ class PerchingArmNode : public ff_util::FreeFlyerNodelet {
     arm_.ConstructDataPacket(SD_data, gpg_n_bytes);
 
     for (size_t ii = 0; ii < gpg_n_bytes; ii++) {
-      msg_.name[7+ii] = prefix_ + "gpg_data_" + std::to_string(ii);
+      msg_.name[7+ii] = "gpg_data_" + std::to_string(ii);
       msg_.position[7+ii] = *(SD_data+ii);
       msg_.velocity[7+ii] = 0;
       msg_.effort[7+ii] = 0;
@@ -315,6 +315,8 @@ class PerchingArmNode : public ff_util::FreeFlyerNodelet {
 
     // Publish the message
     pub_.publish(msg_);
+
+    delete[] SD_data;
   }
 
   // Called whenever a new control command is available
@@ -336,50 +338,50 @@ class PerchingArmNode : public ff_util::FreeFlyerNodelet {
           NODELET_WARN("Distal: only position control is supported");
         // Catch all invalid joint states
       // TODO(acauligi): does CommandGeckoGripper() need to be created?
-      } else if (msg.name[i] == prefix_ + "gecko_gripper_open") {
+      } else if (msg.name[i] == "gecko_gripper_open") {
         arm_.OpenGripper();
-      } else if (msg.name[i] == prefix_ + "gecko_gripper_close") {
+      } else if (msg.name[i] == "gecko_gripper_close") {
         arm_.CloseGripper();
-      } else if (msg.name[i] == prefix_ + "gecko_gripper_engage") {
+      } else if (msg.name[i] == "gecko_gripper_engage") {
         arm_.EngageGripper();
-      } else if (msg.name[i] == prefix_ + "gecko_gripper_disengage") {
+      } else if (msg.name[i] == "gecko_gripper_disengage") {
         arm_.DisengageGripper();
-      } else if (msg.name[i] == prefix_ + "gecko_gripper_lock") {
+      } else if (msg.name[i] == "gecko_gripper_lock") {
         arm_.LockGripper();
-      } else if (msg.name[i] == prefix_ + "gecko_gripper_unlock") {
+      } else if (msg.name[i] == "gecko_gripper_unlock") {
         arm_.UnlockGripper();
-      } else if (msg.name[i] == prefix_ + "gecko_gripper_enable_auto") {
+      } else if (msg.name[i] == "gecko_gripper_enable_auto") {
         arm_.EnableAutoGripper();
-      } else if (msg.name[i] == prefix_ + "gecko_gripper_disable_auto") {
+      } else if (msg.name[i] == "gecko_gripper_disable_auto") {
         arm_.DisableAutoGripper();
-      } else if (msg.name[i] == prefix_ + "gecko_gripper_toggle_auto") {
+      } else if (msg.name[i] == "gecko_gripper_toggle_auto") {
         arm_.ToggleAutoGripper();
-      } else if (msg.name[i] == prefix_ + "gecko_gripper_mark_gripper") {
+      } else if (msg.name[i] == "gecko_gripper_mark_gripper") {
         int16_t IDX = static_cast<int16_t>(msg.position[0]);
         arm_.MarkGripper(IDX);
-      } else if (msg.name[i] == prefix_ + "gecko_gripper_set_delay") {
+      } else if (msg.name[i] == "gecko_gripper_set_delay") {
         int16_t DL = static_cast<int16_t>(msg.position[0]);
         arm_.SetDelayGripper(DL);
-      } else if (msg.name[i] == prefix_ + "gecko_gripper_open_exp") {
+      } else if (msg.name[i] == "gecko_gripper_open_exp") {
         int16_t IDX = static_cast<int16_t>(msg.position[0]);
         arm_.OpenExperimentGripper(IDX);
-      } else if (msg.name[i] == prefix_ + "gecko_gripper_next_record") {
+      } else if (msg.name[i] == "gecko_gripper_next_record") {
         int16_t SKIP = static_cast<int16_t>(msg.position[0]);
         arm_.NextRecordGripper(SKIP);
-      } else if (msg.name[i] == prefix_ + "gecko_gripper_seek_record") {
+      } else if (msg.name[i] == "gecko_gripper_seek_record") {
         int16_t RN = static_cast<int16_t>(msg.position[0]);
         arm_.SeekRecordGripper(RN);
-      } else if (msg.name[i] == prefix_ + "gecko_gripper_close_exp") {
+      } else if (msg.name[i] == "gecko_gripper_close_exp") {
         arm_.CloseExperimentGripper();
-      } else if (msg.name[i] == prefix_ + "gecko_gripper_status") {
+      } else if (msg.name[i] == "gecko_gripper_status") {
         arm_.Status();
-      } else if (msg.name[i] == prefix_ + "gecko_gripper_record") {
+      } else if (msg.name[i] == "gecko_gripper_record") {
         arm_.Record();
-      } else if (msg.name[i] == prefix_ + "gecko_gripper_exp") {
+      } else if (msg.name[i] == "gecko_gripper_exp") {
         arm_.ExperimentIdx();
-      } else if (msg.name[i] == prefix_ + "gecko_gripper_delay") {
+      } else if (msg.name[i] == "gecko_gripper_delay") {
         arm_.PresentDelay();
-      } else if (msg.name[i] == prefix_ + "arm_distal_joint") {
+      } else if (msg.name[i] == "arm_distal_joint") {
       } else {
         NODELET_WARN_STREAM("Invalid joint: " << msg.name[i]);
       }

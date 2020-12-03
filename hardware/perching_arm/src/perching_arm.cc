@@ -200,7 +200,7 @@ PerchingArmResult PerchingArm::ToggleAutoGripper() {
 
 PerchingArmResult PerchingArm::MarkGripper(int16_t idx) {
   int16_t IDX;
-  IDX = ((idx & 0xFF) << 8) | ((idx& 0xFF00) >> 8);
+  IDX = ((idx & 0xFF) << 8) | ((idx & 0xFF00) >> 8);
   return SendCommand(HOST_ARM_BASIC_CMD_GECKO_GRIPPER, ADDRESS_GRIPPER_MARK, IDX);
 }
 
@@ -250,7 +250,7 @@ PerchingArmResult PerchingArm::PresentDelay() {
   return SendCommand(HOST_ARM_BASIC_CMD_GECKO_GRIPPER, GECKO_REG_PRESENT_DELAY, 0x00);
 }
 
-// TODO(acauligi): check method with Arul
+// TODO(acauligi): check method with Tony
 void PerchingArm::ConstructDataPacket(double* data, size_t len) {
   // Check size of double and allocated memory size of data
   if (sizeof(double) != 8 || len != 6) {
