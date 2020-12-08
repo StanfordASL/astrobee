@@ -273,7 +273,7 @@ void PerchingArm::ConstructDataPacket(double* data, size_t len) {
     byte0[3] = 0x00;
   }
 
-  byte0[4] = (raw_.grip.error_status) && 0xFF;
+  byte0[4] = raw_.grip.error_status && 0xFF;
   byte0[5] = (raw_.grip.error_status >> 8) && 0xFF;
   byte0[6] = (raw_.grip.last_status_read_time) && 0xFF;
   byte0[7] = (raw_.grip.last_status_read_time >> 8) && 0xFF;
@@ -304,6 +304,12 @@ void PerchingArm::ConstructDataPacket(double* data, size_t len) {
     // STATUS_L = [- - FILE - AUTO - WRIST ADH]
     byte0[1]  = (raw_.grip.file_is_open << 5) | (raw_.grip.automatic_mode_enable << 3) |
                 (raw_.grip.wrist_lock << 1) | raw_.grip.adhesive_engage;
+
+    byte0[2] = (raw_.grip.delay_ms & 0xFF00) >> 8;    // DL_H
+    byte0[3] = raw_.grip.delay_ms & 0xFF;             // DL_L
+
+    byte0[4] = (raw_.grip.exp_idx & 0xFF00) >> 8;    // IDX_H
+    byte0[5] = raw_.grip.exp_idx & 0xFF;             // IDX_L
 
     *(reinterpret_cast<unsigned char*>(data+1)) = *byte0;
 

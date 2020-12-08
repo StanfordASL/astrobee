@@ -214,7 +214,7 @@ class GazeboModelPluginPerchingArm : public FreeFlyerModelPlugin {
     experiment_in_progress = 0x00;
     overtemperature_flag = 0x00;
     file_is_open = 0x00;
-    // exp_idx;
+    exp_idx = 1221;
     delay_ms = 250;
     read_SD = false;
     // Clear currently stored experiment line
@@ -521,9 +521,8 @@ class GazeboModelPluginPerchingArm : public FreeFlyerModelPlugin {
     } else {
       byte0[3] = 0x00;
     }
-    byte0[3] = 0x01;
 
-    byte0[4] = (error_status) && 0xFF;
+    byte0[4] = error_status && 0xFF;
     byte0[5] = (error_status >> 8) && 0xFF;
     byte0[6] = (last_status_read_time) && 0xFF;
     byte0[7] = (last_status_read_time >> 8) && 0xFF;
@@ -562,6 +561,12 @@ class GazeboModelPluginPerchingArm : public FreeFlyerModelPlugin {
       // STATUS_L = [- - FILE - AUTO - WRIST ADH]
       byte0[1]  = (file_is_open << 5) | (automatic_mode_enable << 3) |
                   (wrist_lock << 1) | adhesive_engage;
+
+    byte0[2] = (delay_ms & 0xFF00) >> 8;    // DL_H
+    byte0[3] = delay_ms & 0xFF;             // DL_L
+
+    byte0[4] = (exp_idx & 0xFF00) >> 8;    // IDX_H
+    byte0[5] = exp_idx & 0xFF;             // IDX_L
 
       msg_ptr = reinterpret_cast<unsigned char*>(data+1);
       for (size_t kk = 0; kk < sizeof(double); kk++) {
