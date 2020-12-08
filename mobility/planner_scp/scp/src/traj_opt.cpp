@@ -35,6 +35,7 @@ TOP::TOP(decimal_t Tf_, int N_)
   dh = Tf / N;
 
   free_final_state = false;
+  state_con_strict = false;
   lin_vel_strict = false;   // true=enforce cons tight, false=use slack vars
   ang_vel_strict = false;   // true=enforce cons tight, false=use slack vars
 
