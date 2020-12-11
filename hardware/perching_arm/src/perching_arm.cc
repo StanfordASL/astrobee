@@ -40,6 +40,7 @@ PerchingArm::PerchingArm()
   raw_.grip.automatic_mode_enable   = 0x00;
   raw_.grip.experiment_in_progress  = 0x00;
   raw_.grip.file_is_open            = 0x00;
+  raw_.grip.exp_idx                 = 65521;
   raw_.grip.delay_ms                = 200;    // hard coded on gripper
   raw_.grip.read_SD = false;
   for (size_t ii = 0; ii < 35; ii++) raw_.grip.line[ii] = '-';
@@ -251,80 +252,29 @@ PerchingArmResult PerchingArm::PresentDelay() {
 }
 
 // TODO(acauligi): check method with Tony
-void PerchingArm::ConstructDataPacket(double* data, size_t len) {
-  // Check size of double and allocated memory size of data
-  if (sizeof(double) != 8 || len != 6) {
-    return;
-  }
-
+void PerchingArm::ConstructDataPacket(double* data, size_t data_len) {
   // Clear data held inside array
-  for (size_t ii = 0; ii < sizeof(double)*len; ii++) {
-    *(reinterpret_cast<char*>(data) + ii) = 0x00;
+  for (size_t ii = 0; ii < data_len; ii++) {
+    data[ii] = 0.0;
   }
-
-  unsigned char byte0[sizeof(double)];
-  byte0[0] = 0xFF;
-  byte0[1] = 0xFF;
-  byte0[2] = 0xFD;
 
   if (raw_.grip.read_SD) {
-    byte0[3] = 0x01;
-  } else {
-    byte0[3] = 0x00;
-  }
-
-  byte0[4] = raw_.grip.error_status && 0xFF;
-  byte0[5] = (raw_.grip.error_status >> 8) && 0xFF;
-  byte0[6] = (raw_.grip.last_status_read_time) && 0xFF;
-  byte0[7] = (raw_.grip.last_status_read_time >> 8) && 0xFF;
-  *(reinterpret_cast<unsigned char*>(data+0)) = *byte0;
-
-  // Clear byte0 value
-  for (size_t jj =0; jj < sizeof(double); jj++) byte0[jj] = 0x00;
-
-  if (raw_.grip.read_SD) {
-    // Write in 35 bytes of data from SD record line
-    // First four double values use full 8 bytes (i.e. 8*4); last one stuffs only 3 bytes
-    for (size_t ii = 1; ii < len; ii++) {
-      size_t stop_len = ii = len-1 ? 3 : sizeof(double);    // for last byte0, only assign first 3 bytes
-
-      for (size_t jj = 0; jj < stop_len; jj++) {
-        byte0[jj] = raw_.grip.line[(ii-1)*sizeof(double)+jj];
-      }
-      *(reinterpret_cast<unsigned char*>(data+ii)) = *byte0;
-
-      // Clear byte0 value
-      for (size_t jj = 0; jj < sizeof(double); jj++) byte0[jj] = 0x00;
+    data[0] = 1.;
+    for (size_t jj = 0; jj < 35; jj++) {
+      data[1+jj] = raw_.grip.line[jj];
     }
   } else {
-    // Write in 2 bytes of status data
-    // STATUS_H = [TEMP -   -   -   -   -   - EXP]
-    byte0[0]  = (raw_.grip.overtemperature_flag << 7) | raw_.grip.experiment_in_progress;
-
-    // STATUS_L = [- - FILE - AUTO - WRIST ADH]
-    byte0[1]  = (raw_.grip.file_is_open << 5) | (raw_.grip.automatic_mode_enable << 3) |
-                (raw_.grip.wrist_lock << 1) | raw_.grip.adhesive_engage;
-
-    byte0[2] = (raw_.grip.delay_ms & 0xFF00) >> 8;    // DL_H
-    byte0[3] = raw_.grip.delay_ms & 0xFF;             // DL_L
-
-    byte0[4] = (raw_.grip.exp_idx & 0xFF00) >> 8;    // IDX_H
-    byte0[5] = raw_.grip.exp_idx & 0xFF;             // IDX_L
-
-    *(reinterpret_cast<unsigned char*>(data+1)) = *byte0;
-
-    // Clear byte0 value
-    for (size_t jj =0; jj < sizeof(double); jj++) byte0[jj] = 0x00;
-
-    // Fill out rest of data values with 0x00
-    for (size_t jj = 2; jj < len; jj++) {
-      *(reinterpret_cast<unsigned char*>(data+jj)) = *byte0;
-    }
-  }
-
-  // Clear currently stored experiment line
-  for (size_t ii = 0; ii < 35; ii++) {
-    raw_.grip.line[ii] = '-';
+    data[0] = 0.0;
+    data[1] = raw_.grip.error_status;
+    data[2] = raw_.grip.last_status_read_time;
+    data[3] = raw_.grip.overtemperature_flag;
+    data[4] = raw_.grip.overtemperature_flag;
+    data[5] = raw_.grip.file_is_open;
+    data[6] = raw_.grip.automatic_mode_enable;
+    data[7] = raw_.grip.wrist_lock;
+    data[8] = raw_.grip.adhesive_engage;
+    data[9] = raw_.grip.delay_ms;
+    data[10] = raw_.grip.exp_idx;
   }
 }
 

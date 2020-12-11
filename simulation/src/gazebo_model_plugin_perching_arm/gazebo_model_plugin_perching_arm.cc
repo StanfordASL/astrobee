@@ -376,11 +376,13 @@ class GazeboModelPluginPerchingArm : public FreeFlyerModelPlugin {
           automatic_mode_enable = 0x01;
         }
       } else if (msg.name[i] == "gecko_gripper_mark_gripper") {
+        exp_idx = static_cast<int16_t>(msg.position[0]);
         experiment_in_progress = true;
         file_is_open = true;
       } else if (msg.name[i] == "gecko_gripper_set_delay") {
-        continue;
+        delay_ms = static_cast<int16_t>(msg.position[0]);
       } else if (msg.name[i] == "gecko_gripper_open_exp") {
+        exp_idx = static_cast<int16_t>(msg.position[0]);
         file_is_open = true;
         continue;
       } else if (msg.name[i] == "gecko_gripper_next_record") {
@@ -567,8 +569,8 @@ class GazeboModelPluginPerchingArm : public FreeFlyerModelPlugin {
   int16_t experiment_in_progress;
   int16_t overtemperature_flag;
   int16_t file_is_open;
-  uint16_t exp_idx;
-  uint16_t delay_ms;
+  int16_t exp_idx;
+  int16_t delay_ms;
   char line[35];
   bool read_SD;
 };
