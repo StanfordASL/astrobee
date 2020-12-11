@@ -128,6 +128,9 @@ class PerchingArmNode : public ff_util::FreeFlyerNodelet {
         pub_ =
             nh->advertise<sensor_msgs::JointState>(TOPIC_JOINT_STATES, 1, true);
 
+        gecko_pub_ =
+            nh->advertise<sensor_msgs::JointState>(TOPIC_GECKO_STATES                         , 1, true);
+
         // Call back with joint state goals from the high-level driver
         sub_ = nh->subscribe(TOPIC_JOINT_GOALS, 1,
                              &PerchingArmNode::GoalCallback, this);
@@ -256,11 +259,10 @@ class PerchingArmNode : public ff_util::FreeFlyerNodelet {
     double perc = -100.0;
 
     // Allocate the joint state message
-    size_t gpg_n_bytes = 6;     // TODO(acauligi): convert from hard coded value?
-    msg_.name.resize(7+gpg_n_bytes);
-    msg_.position.resize(7+gpg_n_bytes);
-    msg_.velocity.resize(7+gpg_n_bytes);
-    msg_.effort.resize(7+gpg_n_bytes);
+    msg_.name.resize(7);
+    msg_.position.resize(7);
+    msg_.velocity.resize(7);
+    msg_.effort.resize(7);
     // Package all joint states, including the left and right proximal
     // and distal joints of the gripper (for visualization reasons)
     msg_.header.stamp = ros::Time::now();
@@ -300,21 +302,31 @@ class PerchingArmNode : public ff_util::FreeFlyerNodelet {
     msg_.velocity[6] = 0;
     msg_.effort[6] = 0;
 
+    // Publish the message
+    pub_.publish(msg_);
+
     // TODO(acauligi): check math with Arul
     // Stuff gecko perching gripper into joint state values
+    size_t gpg_n_bytes = 6;     // TODO(acauligi): convert from hard coded value?
+    gecko_msg_.header.stamp = ros::Time::now();
+    gecko_msg_.name.resize(gpg_n_bytes);
+    gecko_msg_.position.resize(gpg_n_bytes);
+    gecko_msg_.velocity.resize(gpg_n_bytes);
+    gecko_msg_.effort.resize(gpg_n_bytes);
+
     double* SD_data;
     SD_data = new double[gpg_n_bytes];
     arm_.ConstructDataPacket(SD_data, gpg_n_bytes);
 
-    for (size_t ii = 0; ii < gpg_n_bytes; ii++) {
-      msg_.name[7+ii] = "gpg_data_" + std::to_string(ii);
-      msg_.position[7+ii] = *(SD_data+ii);
-      msg_.velocity[7+ii] = 0;
-      msg_.effort[7+ii] = 0;
+    for (size_t jj = 0; jj < gpg_n_bytes; jj++) {
+      gecko_msg_.name[jj] = "gpg_data_" + std::to_string(jj);
+      gecko_msg_.position[jj] = *(SD_data+jj);
+      gecko_msg_.velocity[jj] = 0;
+      gecko_msg_.effort[jj] = 0;
     }
 
     // Publish the message
-    pub_.publish(msg_);
+    gecko_pub_.publish(gecko_msg_);
 
     delete[] SD_data;
   }
@@ -436,6 +448,7 @@ class PerchingArmNode : public ff_util::FreeFlyerNodelet {
   PerchingArm arm_;              // Arm interface library
   ros::Subscriber sub_;          // Joint state subscriber
   ros::Publisher pub_;           // Joint state publisher
+  ros::Publisher gecko_pub_;     // Gecko gripper state publisher
   ros::ServiceServer srv_p_;     // Set max pan velocity
   ros::ServiceServer srv_t_;     // Set max tilt velcoity
   ros::ServiceServer srv_ps_;    // Enable/Disable the proximal joint servo
@@ -443,6 +456,7 @@ class PerchingArmNode : public ff_util::FreeFlyerNodelet {
 
   std::string prefix_;           // Joint prefix
   sensor_msgs::JointState msg_;  // Internal joint state
+  sensor_msgs::JointState gecko_msg_;  // Gecko gripper state
 };
 
 PLUGINLIB_EXPORT_CLASS(perching_arm::PerchingArmNode, nodelet::Nodelet);

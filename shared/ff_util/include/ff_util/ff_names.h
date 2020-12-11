@@ -81,6 +81,7 @@
 #define TOPIC_HEARTBEAT                             "heartbeat"
 #define TOPIC_JOINT_GOALS                           "joint_goals"
 #define TOPIC_JOINT_STATES                          "joint_states"
+#define TOPIC_GECKO_STATES                          "gecko_states"
 #define TOPIC_PERFORMANCE                           "performance"
 #define TOPIC_ROBOT_NAME                            "robot_name"
 #define TOPIC_SIGNALS                               "signals"

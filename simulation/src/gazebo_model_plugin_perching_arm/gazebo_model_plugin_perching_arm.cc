@@ -154,18 +154,25 @@ class GazeboModelPluginPerchingArm : public FreeFlyerModelPlugin {
     joints_.push_back(GetModel()->GetJoint(
       bay_+"_gripper_right_distal_joint"));
 
-    // Number of double's to be sent to /joint_states for gripper
-    gpg_n_bytes = 6;
-
     // Avoid resizing in each callback
     msg_.header.frame_id =  GetModel()->GetName();
-    msg_.name.resize(joints_.size() + 1 + gpg_n_bytes);
-    msg_.position.resize(joints_.size() + 1 + gpg_n_bytes);
-    msg_.velocity.resize(joints_.size() + 1 + gpg_n_bytes);
-    msg_.effort.resize(joints_.size() + 1 + gpg_n_bytes);
+    msg_.name.resize(joints_.size() + 1);
+    msg_.position.resize(joints_.size() + 1);
+    msg_.velocity.resize(joints_.size() + 1);
+    msg_.effort.resize(joints_.size() + 1);
+
+    // Number of double's to be sent to /joint_states for gripper
+    gpg_n_doubles = 35;
+    gecko_msg_.header.frame_id =  GetModel()->GetName();
+    gecko_msg_.name.resize(gpg_n_doubles);
+    gecko_msg_.position.resize(gpg_n_doubles);
+    gecko_msg_.velocity.resize(gpg_n_doubles);
+    gecko_msg_.effort.resize(gpg_n_doubles);
 
     // Create a joint state publisher for the arm
     pub_ = nh->advertise<sensor_msgs::JointState>("joint_states", 100, true);
+
+    gecko_pub_ = nh->advertise<sensor_msgs::JointState>("gecko_states", 100, true);
 
     // Now register to be called back every time FAM has new wrench
     sub_ = nh->subscribe("joint_goals", 1,
@@ -418,21 +425,23 @@ class GazeboModelPluginPerchingArm : public FreeFlyerModelPlugin {
     msg_.velocity[i] = 0;
     msg_.effort[i] = 0;
 
+    pub_.publish(msg_);
+
+    gecko_msg_.header.stamp = ros::Time::now();
     double* SD_data;
     // In perching_arm_node.cc, following line would use actual gripper packet data
-    SD_data = new double[gpg_n_bytes];
+    SD_data = new double[gpg_n_doubles];
 
-    ConstructDataPacket(SD_data, gpg_n_bytes);
+    ConstructDataPacket(SD_data, gpg_n_doubles);
 
-    i++;
-    for (size_t jj = 0; jj < gpg_n_bytes; jj++) {
-      msg_.name[i+jj] = "gpg_data_" + std::to_string(jj);
-      msg_.position[i+jj] = *(SD_data+jj);
-      msg_.velocity[i+jj] = 0.;
-      msg_.effort[i+jj] = 0.;
+    for (size_t jj = 0; jj < gpg_n_doubles; jj++) {
+      gecko_msg_.name[jj] = "gpg_data_" + std::to_string(jj);
+      gecko_msg_.position[jj] = *(SD_data+jj);
+      gecko_msg_.velocity[jj] = 0.;
+      gecko_msg_.effort[jj] = 0.;
     }
 
-    pub_.publish(msg_);
+    gecko_pub_.publish(gecko_msg_);
     // Publish the joint state
     delete[] SD_data;
   }
@@ -499,121 +508,57 @@ class GazeboModelPluginPerchingArm : public FreeFlyerModelPlugin {
   }
 
   // Calibrate the gripper
-  void ConstructDataPacket(double* data, size_t len) {
-    // Check size of double and allocated memory size of data
-    if (sizeof(double) != 8 || len != 6) {
-      return;
-    }
-
+  void ConstructDataPacket(double* data, size_t data_len) {
     // Clear data held inside array
-    for (size_t ii = 0; ii < sizeof(double)*len; ii++) {
-      *(reinterpret_cast<char*>(data) + ii) = 0x00;
+    for (size_t ii = 0; ii < data_len; ii++) {
+      data[ii] = 0.0;
     }
-
-    unsigned char* msg_ptr;
-    unsigned char byte0[sizeof(double)];
-    byte0[0] = 0xFF;
-    byte0[1] = 0xFF;
-    byte0[2] = 0xFD;
 
     if (read_SD) {
-      byte0[3] = 0x01;
-    } else {
-      byte0[3] = 0x00;
-    }
-
-    byte0[4] = error_status && 0xFF;
-    byte0[5] = (error_status >> 8) && 0xFF;
-    byte0[6] = (last_status_read_time) && 0xFF;
-    byte0[7] = (last_status_read_time >> 8) && 0xFF;
-
-    msg_ptr = reinterpret_cast<unsigned char*>(data+0);
-    for (size_t kk = 0; kk < sizeof(double); kk++) {
-      *(msg_ptr+kk) = byte0[kk];
-    }
-
-    // Clear byte0 value
-    for (size_t jj = 0; jj < sizeof(double); jj++) byte0[jj] = 0x00;
-
-    if (read_SD) {
-      // Write in 35 bytes of data from SD record line
-      // First four double values use full 8 bytes (i.e. 8*4); last one stuffs only 3 bytes
-      for (size_t ii = 1; ii < len; ii++) {
-        size_t stop_len = ii = len-1 ? 3 : sizeof(double);    // for last byte0, only assign first 3 bytes
-
-        for (size_t jj = 0; jj < stop_len; jj++) {
-          byte0[jj] = line[(ii-1)*sizeof(double)+jj];
-        }
-
-        msg_ptr = reinterpret_cast<unsigned char*>(data+ii);
-        for (size_t kk = 0; kk < sizeof(double); kk++) {
-          *(msg_ptr+kk) = byte0[kk];
-        }
-
-        // Clear byte0 value
-        for (size_t jj = 0; jj < sizeof(double); jj++) byte0[jj] = 0x00;
+      data[0] = 1.;
+      for (size_t jj = 0; jj < 35; jj++) {
+        data[1+jj] = line[jj];
       }
     } else {
-      // Write in 2 bytes of status data
-      // STATUS_H = [TEMP -   -   -   -   -   - EXP]
-      byte0[0]  = (overtemperature_flag << 7) | experiment_in_progress;
-
-      // STATUS_L = [- - FILE - AUTO - WRIST ADH]
-      byte0[1]  = (file_is_open << 5) | (automatic_mode_enable << 3) |
-                  (wrist_lock << 1) | adhesive_engage;
-
-    byte0[2] = (delay_ms & 0xFF00) >> 8;    // DL_H
-    byte0[3] = delay_ms & 0xFF;             // DL_L
-
-    byte0[4] = (exp_idx & 0xFF00) >> 8;    // IDX_H
-    byte0[5] = exp_idx & 0xFF;             // IDX_L
-
-      msg_ptr = reinterpret_cast<unsigned char*>(data+1);
-      for (size_t kk = 0; kk < sizeof(double); kk++) {
-        *(msg_ptr+kk) = byte0[kk];
-      }
-
-      // Clear byte0 value
-      for (size_t jj =0; jj < sizeof(double); jj++) byte0[jj] = 0x00;
-
-      // Fill out rest of data values with 0x00
-      for (size_t jj = 2; jj < len; jj++) {
-        msg_ptr = reinterpret_cast<unsigned char*>(data+jj);
-        for (size_t kk = 0; kk < sizeof(double); kk++) {
-          *(msg_ptr+kk) = byte0[kk];
-        }
-      }
-    }
-
-    // Clear currently stored experiment line
-    for (size_t ii = 0; ii < 35; ii++) {
-      line[ii] = '-';
+      data[0] = 0.0;
+      data[1] = error_status;
+      data[2] = last_status_read_time;
+      data[3] = overtemperature_flag;
+      data[4] = experiment_in_progress;
+      data[5] = file_is_open;
+      data[6] = automatic_mode_enable;
+      data[7] = wrist_lock;
+      data[8] = adhesive_engage;
+      data[9] = delay_ms;
+      data[10] = exp_idx;
     }
   }
 
  private:
-  double rate_;                   // Rate of joint state update
-  std::string bay_;               // Prefix to avoid name collisions
-  ros::Timer timer_;              // Timer for sending updates
-  ros::Publisher pub_;            // Joint state publisher
-  ros::Subscriber sub_;           // Joint goal subscriber
-  ros::ServiceServer srv_p_;      // Set max pan velocity
-  ros::ServiceServer srv_t_;      // Set max tilt velcoity
-  physics::Joint_V joints_;       // List of joints in system
-  sensor_msgs::JointState msg_;   // Joint state message
-  double grip_;                   // Joint state message
-  common::PID pid_prox_p_;        // PID : arm proximal position
-  common::PID pid_dist_p_;        // PID : arm distal position
-  common::PID pid_gl_prox_p_;     // PID : gripper left proximal position
-  common::PID pid_gl_dist_p_;     // PID : gripper left distal position
-  common::PID pid_gr_prox_p_;     // PID : gripper right proximal position
-  common::PID pid_gr_dist_p_;     // PID : gripper right distal position
-  ros::ServiceServer srv_ps_;    // Enable/Disable the proximal joint servo
-  ros::ServiceServer srv_ds_;    // Enable/Disable the distal   joint servo
-  ros::ServiceServer srv_gs_;    // Enable/Disable the gripper  joint servo
-  ros::ServiceServer srv_c_;     // Calibrate gripper
+  double rate_;                         // Rate of joint state update
+  std::string bay_;                     // Prefix to avoid name collisions
+  ros::Timer timer_;                    // Timer for sending updates
+  ros::Publisher pub_;                  // Joint state publisher
+  ros::Publisher gecko_pub_;            // Gecko gripper state publisher
+  ros::Subscriber sub_;                 // Joint goal subscriber
+  ros::ServiceServer srv_p_;            // Set max pan velocity
+  ros::ServiceServer srv_t_;            // Set max tilt velcoity
+  physics::Joint_V joints_;             // List of joints in system
+  sensor_msgs::JointState msg_;         // Joint state message
+  sensor_msgs::JointState gecko_msg_;   // Gecko state message
+  double grip_;                         // Joint state message
+  common::PID pid_prox_p_;              // PID : arm proximal position
+  common::PID pid_dist_p_;              // PID : arm distal position
+  common::PID pid_gl_prox_p_;           // PID : gripper left proximal position
+  common::PID pid_gl_dist_p_;           // PID : gripper left distal position
+  common::PID pid_gr_prox_p_;           // PID : gripper right proximal position
+  common::PID pid_gr_dist_p_;           // PID : gripper right distal position
+  ros::ServiceServer srv_ps_;           // Enable/Disable the proximal joint servo
+  ros::ServiceServer srv_ds_;           // Enable/Disable the distal   joint servo
+  ros::ServiceServer srv_gs_;           // Enable/Disable the gripper  joint servo
+  ros::ServiceServer srv_c_;            // Calibrate gripper
 
-  size_t gpg_n_bytes;
+  size_t gpg_n_doubles;
   uint16_t last_status_read_time;
   uint16_t error_status;
   int16_t adhesive_engage;
