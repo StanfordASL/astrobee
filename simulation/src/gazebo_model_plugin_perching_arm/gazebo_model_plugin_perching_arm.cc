@@ -221,7 +221,7 @@ class GazeboModelPluginPerchingArm : public FreeFlyerModelPlugin {
     experiment_in_progress = 0x00;
     overtemperature_flag = 0x00;
     file_is_open = 0x00;
-    exp_idx = 1221;
+    exp_idx = 65521;
     delay_ms = 250;
     read_SD = false;
     // Clear currently stored experiment line

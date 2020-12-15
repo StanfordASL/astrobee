@@ -268,7 +268,7 @@ void PerchingArm::ConstructDataPacket(double* data, size_t data_len) {
     data[1] = raw_.grip.error_status;
     data[2] = raw_.grip.last_status_read_time;
     data[3] = raw_.grip.overtemperature_flag;
-    data[4] = raw_.grip.overtemperature_flag;
+    data[4] = raw_.grip.experiment_in_progress;
     data[5] = raw_.grip.file_is_open;
     data[6] = raw_.grip.automatic_mode_enable;
     data[7] = raw_.grip.wrist_lock;
