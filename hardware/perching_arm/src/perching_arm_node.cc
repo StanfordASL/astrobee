@@ -129,7 +129,7 @@ class PerchingArmNode : public ff_util::FreeFlyerNodelet {
             nh->advertise<sensor_msgs::JointState>(TOPIC_JOINT_STATES, 1, true);
 
         gecko_pub_ =
-            nh->advertise<sensor_msgs::JointState>(TOPIC_GECKO_STATES                         , 1, true);
+            nh->advertise<sensor_msgs::JointState>(TOPIC_GECKO_STATES, 1, true);
 
         // Call back with joint state goals from the high-level driver
         sub_ = nh->subscribe(TOPIC_JOINT_GOALS, 1,
@@ -305,20 +305,20 @@ class PerchingArmNode : public ff_util::FreeFlyerNodelet {
     // Publish the message
     pub_.publish(msg_);
 
-    // TODO(acauligi): check math with Arul
+    // TODO(acauligi): check math with Tony
     // Stuff gecko perching gripper into joint state values
-    size_t gpg_n_bytes = 6;     // TODO(acauligi): convert from hard coded value?
+    size_t gpg_n_doubles = 35;     // TODO(acauligi): convert from hard coded value?
     gecko_msg_.header.stamp = ros::Time::now();
-    gecko_msg_.name.resize(gpg_n_bytes);
-    gecko_msg_.position.resize(gpg_n_bytes);
-    gecko_msg_.velocity.resize(gpg_n_bytes);
-    gecko_msg_.effort.resize(gpg_n_bytes);
+    gecko_msg_.name.resize(gpg_n_doubles);
+    gecko_msg_.position.resize(gpg_n_doubles);
+    gecko_msg_.velocity.resize(gpg_n_doubles);
+    gecko_msg_.effort.resize(gpg_n_doubles);
 
     double* SD_data;
-    SD_data = new double[gpg_n_bytes];
-    arm_.ConstructDataPacket(SD_data, gpg_n_bytes);
+    SD_data = new double[gpg_n_doubles];
+    arm_.ConstructDataPacket(SD_data, gpg_n_doubles);
 
-    for (size_t jj = 0; jj < gpg_n_bytes; jj++) {
+    for (size_t jj = 0; jj < gpg_n_doubles; jj++) {
       gecko_msg_.name[jj] = "gpg_data_" + std::to_string(jj);
       gecko_msg_.position[jj] = *(SD_data+jj);
       gecko_msg_.velocity[jj] = 0;
