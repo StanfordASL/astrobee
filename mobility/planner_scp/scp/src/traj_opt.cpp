@@ -341,7 +341,7 @@ void TOP::UpdateA(Mat7& A, Vec13& X, Vec6& U) {
 void TOP::UpdateB(Mat7x3& B, Vec13& X, Vec6& U) {
   B.setZero();
 
-  B.block(4, 3, 3, 3) = Jinv;
+  B.block(4, 0, 3, 3) = Jinv;
 }
 
 void TOP::UpdateDynamics() {
@@ -722,8 +722,8 @@ void TOP::SetDynamicsCons() {
     Xprev_kp1 = Xprev[ii+1].segment(6, 7);
     Uprev_k = Uprev[ii].segment(3, 3);
     Uprev_kp1 = Uprev[ii+1].segment(3, 3);
-    fk = fs[ii].segment(6, 7);
-    fkp1 = fs[ii+1].segment(6, 7);
+    fk = fs[ii];
+    fkp1 = fs[ii+1];
 
     ck = 0.5*dh*(
       As[ii]*Xprev_k + Bs[ii]*Uprev_k
@@ -739,7 +739,7 @@ void TOP::SetDynamicsCons() {
   Ak = dh*As[N-2] + eye;
   Akp1 = -eye;
   Bk = dh*Bs[N-2];
-  fk = fs[N-2].segment(6, 7);
+  fk = fs[N-2];
   Xprev_k = Xprev[N-2].segment(6, 7);
   Uprev_k = Uprev[N-2].segment(3, 3);
 
