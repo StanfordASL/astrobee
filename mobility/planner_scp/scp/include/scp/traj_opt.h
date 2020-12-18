@@ -43,7 +43,11 @@ class TOP {
   size_t N;
   decimal_t dh;
   decimal_t Tf;
+
   bool free_final_state;
+  bool state_con_strict;
+  bool lin_vel_strict;
+  bool ang_vel_strict;
 
   collision_checker::BulletCollisionChecker cc;
 
