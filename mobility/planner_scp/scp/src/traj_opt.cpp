@@ -42,7 +42,7 @@ TOP::TOP(decimal_t Tf_, int N_)
   solver = NULL;
 
   x0 << 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
-  xg = x0;
+  xg << 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
 
   // TODO(acauligi): read off params server
   radius_ = 0.26;
@@ -96,42 +96,19 @@ TOP::TOP(decimal_t Tf_, int N_)
 // }
 
 size_t TOP::GetNumTOPVariables() {
-  size_t state_vars = state_dim*N;
-  size_t control_vars = control_dim*(N-1);
-  size_t control_slack_vars = control_dim*(N-1);
-  size_t state_UB_slack_vars = 7*(N-1);
-  size_t state_LB_slack_vars = 7*(N-1);
-  size_t vel_slack_vars = 4*(N-1);
-  size_t omega_slack_vars = 4*(N-1);
-  size_t trust_region_slack_vars = (state_dim+1)*(N-1);
-  size_t obs_avoidance_slack_vars = keep_out_zones_->size()*(N-1);
-  return state_vars + control_vars +
-    control_slack_vars +
-    state_UB_slack_vars + state_LB_slack_vars +
-    vel_slack_vars + omega_slack_vars +
-    trust_region_slack_vars + obs_avoidance_slack_vars;
+  // TODO(acauligi): Only state and control (no slack vars yet)
+  return state_dim*N + control_dim*(N-1) + control_dim*(N-1);
 }
 
 size_t TOP::GetNumTOPConstraints() {
-  size_t boundary_cons = 2*state_dim;
-  size_t control_slack_cons = 2*10*(N-1);
-  size_t state_UB_slack_cons = 2*7*(N-1);
-  size_t state_LB_slack_cons = 2*7*(N-1);
-  size_t vel_norm_slack_cons = 11*(N-1);
-  size_t omega_norm_slack_cons = 11*(N-1);
-  size_t dynamics_cons = state_dim*(N-1);
-  size_t trust_region_slack_cons = (3*state_dim+2)*(N-1);
-  size_t obs_avoidance_slack_cons = 2*keep_out_zones_->size()*(N-1);
-  return boundary_cons + control_slack_cons +
-    state_UB_slack_cons + state_LB_slack_cons +
-    vel_norm_slack_cons + omega_norm_slack_cons +
-    dynamics_cons + trust_region_slack_cons + obs_avoidance_slack_cons;
+  // TODO(acauligi): only dynamics and boundary conditions
+  return state_dim*(N-1) + 2*state_dim + 2*10*(N-1);
 }
 
 void TOP::ResetSCPParams() {
   // SCP parameters
   solved_ = false;
-  max_iter = 20;
+  max_iter = 3;
   Delta_0 = 100;
   Delta = Delta_0;
   omega_0 = 1.;
@@ -177,32 +154,24 @@ void TOP::UpdateProblemDimension(size_t N_) {
 
   size_t num_vars = GetNumTOPVariables();
   size_t num_cons = GetNumTOPConstraints();
+
   hessian.resize(num_vars, num_vars);
   linear_con_mat.resize(num_cons, num_vars);
   gradient.resize(num_vars);
   lower_bound.resize(num_cons);
   upper_bound.resize(num_cons);
-  for (size_t ii = 0; ii < num_cons; ii++) {
-    lower_bound(ii) = -OsqpEigen::INFTY;
-    upper_bound(ii) = OsqpEigen::INFTY;
-  }
   qp_soln.resize(num_vars);
 
+  UpdateDoubleIntegrator();
   InitTrajStraightline();
   UpdateDynamics();
 
-  SetHessianMatrix();
-  SetGradient();
-  SetBoundaryCons();
-  SetControlCons();
-  SetStateCons();
-  SetVelCons();
-  SetAngVelCons();
+  linear_con_mat.resize(num_cons, num_vars);
+  lower_bound.resize(num_cons);
+  upper_bound.resize(num_cons);
 
-  SetLinearDynamicsCons();
-  SetDynamicsCons();
-  SetTrustRegionCons();
-  SetObsCons();
+  SetSimpleConstraints();
+  SetSimpleCosts();
 
   // Set up solver
   abs_tol_ = 1e-3;
@@ -250,6 +219,201 @@ void TOP::InitTrajStraightline() {
   for (size_t ii = 0; ii < N-1; ii++) {
     for (size_t jj = 0; jj < control_dim; jj++) {
       Uprev[ii](jj) = 0;
+    }
+  }
+}
+
+void TOP::SetSimpleConstraints() {
+  Mat7 eye;
+  eye.setIdentity();
+
+  size_t row_idx = 0;
+  size_t control_dim_lin = control_dim/2;
+  size_t control_dim_nlin = control_dim/2;
+
+  for (size_t ii = 0; ii < N-1; ii++) {
+    // Double integrator dynamics first
+    for (size_t jj = 0; jj < state_dim_lin; jj++) {
+      lower_bound(row_idx+jj) = 0.0;
+      upper_bound(row_idx+jj) = 0.0;
+
+      linear_con_mat.insert(row_idx+jj, state_dim*(ii+1)+jj) = -1.0;
+      for (size_t kk = 0; kk < state_dim_lin; kk++) {
+        linear_con_mat.insert(row_idx+jj, state_dim*ii+kk) = Ak_di(jj, kk);
+      }
+
+      for (size_t kk = 0; kk < control_dim_lin; kk++) {
+        linear_con_mat.insert(row_idx+jj, state_dim*N+control_dim*ii+kk) = Bk_di(jj, kk);
+      }
+    }
+
+    // Nonlinear attitude dynamics second
+    Vec7 Xprev_k = Xprev[ii].segment(6, 7);
+    Vec3 Uprev_k = Uprev[ii].segment(3, 3);
+    Vec7 fk = fs[ii];
+    Vec7 ck = dh*(As[ii]*Xprev_k + Bs[ii]*Uprev_k - fk);
+    for (size_t jj = 0; jj < state_dim_nlin; jj++) {
+      lower_bound(row_idx+state_dim_lin+jj) = ck(jj);
+      upper_bound(row_idx+state_dim_lin+jj) = ck(jj);
+
+      // Simple explicit Euler integration scheme
+      linear_con_mat.insert(row_idx+state_dim_lin+jj, state_dim*(ii+1)+state_dim_lin+jj) = -1.0;
+      for (size_t kk = 0; kk < state_dim_nlin; kk++) {
+        linear_con_mat.insert(row_idx+state_dim_lin+jj, state_dim*ii+state_dim_lin+kk) = eye(jj, kk)+dh*As[ii](jj, kk);
+      }
+      for (size_t kk = 0; kk < control_dim_nlin; kk++) {
+        linear_con_mat.insert(row_idx+state_dim_lin+jj,
+          state_dim*N+control_dim*ii+control_dim_lin+kk) = dh*Bs[ii](jj, kk);
+      }
+    }
+    row_idx += state_dim;
+  }
+
+  // Initial state
+  for (size_t ii = 0; ii < state_dim; ii++) {
+    linear_con_mat.insert(row_idx+ii, ii) = 1.0;
+    lower_bound(row_idx+ii) = x0(ii);
+    upper_bound(row_idx+ii) = x0(ii);
+  }
+  row_idx += state_dim;
+
+  // Goal state
+  for (size_t ii = 0; ii < state_dim; ii++) {
+    linear_con_mat.insert(row_idx+ii, state_dim*(N-1)+ii) = 1.0;
+    lower_bound(row_idx+ii) = xg(ii);
+    upper_bound(row_idx+ii) = xg(ii);
+  }
+  row_idx += state_dim;
+
+  // Force constraints
+  for (size_t ii = 0; ii < N-1; ii++) {
+    // -s_ik - a_ik <= 0.0
+    for (size_t jj = 0; jj < control_dim_lin; jj++) {
+      linear_con_mat.insert(row_idx+jj, state_dim*N+control_dim*(N-1)+control_dim*ii+jj) = -1.0;
+      linear_con_mat.insert(row_idx+jj, state_dim*N+control_dim*ii+jj) = -1.0;
+      upper_bound(row_idx+jj) = 0.0;
+    }
+    row_idx += control_dim_lin;
+
+    // a_ik -s_ik <= 0.0
+    for (size_t jj = 0; jj < control_dim_lin; jj++) {
+      linear_con_mat.insert(row_idx+jj, state_dim*N+control_dim*(N-1)+control_dim*ii+jj) = -1.0;
+      linear_con_mat.insert(row_idx+jj, state_dim*N+control_dim*ii+jj) = 1.0;
+      upper_bound(row_idx+jj) = 0.0;
+    }
+    row_idx += control_dim_lin;
+
+    // -s_ik <= 0.0
+    for (size_t jj = 0; jj < control_dim_lin; jj++) {
+      linear_con_mat.insert(row_idx+jj, state_dim*N+control_dim*(N-1)+control_dim*ii+jj) = -1.0;
+      upper_bound(row_idx+jj) = 0.0;
+    }
+    row_idx += control_dim_lin;
+
+    // sum(s_ik) <= a_max
+    for (size_t jj = 0; jj < control_dim_lin; jj++) {
+      linear_con_mat.insert(row_idx, state_dim*N+control_dim*(N-1)+control_dim*ii+jj) = 1.0;
+    }
+    upper_bound(row_idx) = desired_accel_;
+
+    row_idx++;
+  }
+}
+
+void TOP::SetSimpleCosts() {
+  // Cost function
+  for (size_t ii = 0; ii < N; ii++) {
+    // Penalize only distance to xg and final linear velocity
+    for (size_t jj = 0; jj < state_dim_lin; jj++) {
+      hessian.insert(state_dim*ii+jj, state_dim*ii+jj) = 10.0;
+      gradient(state_dim*ii+jj) = -2*xg(jj);
+    }
+  }
+
+  for (size_t ii = 0; ii < N-1; ii++) {
+    for (size_t jj = 0; jj < control_dim; jj++) {
+      hessian.insert(state_dim*N+control_dim*ii+jj, state_dim*N+control_dim*ii+jj) = 10.0;
+    }
+  }
+}
+
+void TOP::UpdateSimpleConstraints() {
+  Mat7 eye;
+  eye.setIdentity();
+
+  size_t row_idx = 0;
+  size_t control_dim_lin = control_dim/2;
+  size_t control_dim_nlin = control_dim/2;
+
+  for (size_t ii = 0; ii < N-1; ii++) {
+    // Double integrator dynamics first
+    for (size_t jj = 0; jj < state_dim_lin; jj++) {
+      lower_bound(row_idx+jj) = 0.0;
+      upper_bound(row_idx+jj) = 0.0;
+
+      linear_con_mat.coeffRef(row_idx+jj, state_dim*(ii+1)+jj) = -1.0;
+      for (size_t kk = 0; kk < state_dim_lin; kk++) {
+        linear_con_mat.coeffRef(row_idx+jj, state_dim*ii+kk) = Ak_di(jj, kk);
+      }
+
+      for (size_t kk = 0; kk < control_dim_lin; kk++) {
+        linear_con_mat.coeffRef(row_idx+jj, state_dim*N+control_dim*ii+kk) = Bk_di(jj, kk);
+      }
+    }
+
+    // Nonlinear attitude dynamics second
+    Vec7 Xprev_k = Xprev[ii].segment(6, 7);
+    Vec3 Uprev_k = Uprev[ii].segment(3, 3);
+    Vec7 fk = fs[ii];
+    Vec7 ck = dh*(As[ii]*Xprev_k + Bs[ii]*Uprev_k - fk);
+    for (size_t jj = 0; jj < state_dim_nlin; jj++) {
+      lower_bound(row_idx+state_dim_lin+jj) = ck(jj);
+      upper_bound(row_idx+state_dim_lin+jj) = ck(jj);
+
+      // Simple explicit Euler integration scheme
+      linear_con_mat.coeffRef(row_idx+state_dim_lin+jj, state_dim*(ii+1)+state_dim_lin+jj) = -1.0;
+      for (size_t kk = 0; kk < state_dim_nlin; kk++) {
+        linear_con_mat.coeffRef(row_idx+state_dim_lin+jj, state_dim*ii+state_dim_lin+kk) =
+          eye(jj, kk)+dh*As[ii](jj, kk);
+      }
+      for (size_t kk = 0; kk < control_dim_nlin; kk++) {
+        linear_con_mat.coeffRef(row_idx+state_dim_lin+jj,
+          state_dim*N+control_dim*ii+control_dim_lin+kk) = dh*Bs[ii](jj, kk);
+      }
+    }
+    row_idx += state_dim;
+  }
+
+  // Initial state
+  for (size_t ii = 0; ii < state_dim; ii++) {
+    linear_con_mat.coeffRef(row_idx+ii, ii) = 1.0;
+    lower_bound(row_idx+ii) = x0(ii);
+    upper_bound(row_idx+ii) = x0(ii);
+  }
+  row_idx += state_dim;
+
+  // Goal state
+  for (size_t ii = 0; ii < state_dim; ii++) {
+    linear_con_mat.coeffRef(row_idx+ii, state_dim*(N-1)+ii) = 1.0;
+    lower_bound(row_idx+ii) = xg(ii);
+    upper_bound(row_idx+ii) = xg(ii);
+  }
+  row_idx += state_dim;
+}
+
+void TOP::UpdateSimpleCosts() {
+  // Cost function
+  for (size_t ii = 0; ii < N; ii++) {
+    // Penalize only distance to xg and final linear velocity
+    for (size_t jj = 0; jj < state_dim_lin; jj++) {
+      hessian.coeffRef(state_dim*ii+jj, state_dim*ii+jj) = 10.0;
+      gradient(state_dim*ii+jj) = -2*xg(jj);
+    }
+  }
+
+  for (size_t ii = 0; ii < N-1; ii++) {
+    for (size_t jj = 0; jj < control_dim; jj++) {
+      hessian.coeffRef(state_dim*N+control_dim*ii+jj, state_dim*N+control_dim*ii+jj) = 10.0;
     }
   }
 }
@@ -361,16 +525,19 @@ void TOP::UpdateDynamics() {
 }
 
 void TOP::SetHessianMatrix() {
+  size_t num_vars = GetNumTOPVariables();
   Qf.diagonal() << 1000, 1000, 1000, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1;
   R.diagonal() << 1, 1, 1, 1, 1, 1;
 
   int idx = state_dim*N;
   for (size_t ii = 0; ii < N-1; ii++) {
     for (size_t jj = 0; jj < control_dim; jj++) {
-      hessian.insert(idx+jj, idx+jj) = R.diagonal()[jj];
+      // hessian.insert(idx+jj, idx+jj) = R.diagonal()[jj];
     }
     idx += control_dim;
   }
+
+  for (size_t ii = 0; ii < num_vars; ii++) hessian.insert(ii, ii) = 0.0;
 }
 
 void TOP::SetGradient() {
@@ -662,6 +829,7 @@ void TOP::SetAngVelCons() {
 
 void TOP::SetLinearDynamicsCons() {
   size_t row_idx = 2*state_dim + 20*(N-1) + 4*state_bd_dim*(N-1) + 2*11*(N-1);
+  row_idx = 2*state_dim + 20*(N-1) + 4*state_bd_dim*(N-1);
   size_t control_dim_lin = static_cast<size_t>(control_dim/2);
 
   // Ak*xk+Bk*uk - x_{k+1} = 0
@@ -706,6 +874,7 @@ void TOP::SetDynamicsCons() {
   Vec3 Uprev_k, Uprev_kp1;
 
   size_t row_idx = 2*state_dim + 20*(N-1) + 4*state_bd_dim*(N-1) + 2*11*(N-1) + state_dim_lin*(N-1);
+  row_idx = 2*state_dim + 20*(N-1) + 4*state_bd_dim*(N-1) + state_dim_lin*(N-1);
   size_t control_dim_nlin = static_cast<size_t>(control_dim/2);
 
   // Trapezoidal integration for ii = 0,..,N-3
@@ -1121,7 +1290,7 @@ bool TOP::SatisfiesStateInequalityConstraints() {
 bool TOP::Solve() {
   solved_ = false;
   InitTrajStraightline();
-  UpdateBoundaryCons();
+  // UpdateBoundaryCons();
 
   // Set warm start
   for (size_t ii = 0; ii < N; ii++) {
@@ -1137,10 +1306,12 @@ bool TOP::Solve() {
   for (size_t kk = 0; kk < max_iter; kk++) {
     // update constraint matrix
     UpdateDynamics();
-    SetDynamicsCons();
-    UpdateTrustRegionCons();
-    UpdateGradient();
-    UpdateObsCons();
+    UpdateSimpleConstraints();
+    UpdateSimpleCosts();
+    // SetDynamicsCons();
+    // UpdateTrustRegionCons();
+    // UpdateGradient();
+    // UpdateObsCons();
 
     // solver.data()->clearLinearConstraintsMatrix();
     if (!solver->updateLinearConstraintsMatrix(linear_con_mat)) {
@@ -1149,50 +1320,54 @@ bool TOP::Solve() {
       solver_ready_ = false;
     } else if (!solver->updateBounds(lower_bound, upper_bound)) {
       solver_ready_ = false;
+    } else if (!solver->setPrimalVariable(qp_soln)) {
+      solver_ready_ = false;
     }
 
+    solved_ = true;
     if (!solver_ready_) {
+      solved_ = false;
       return false;
     } else if (!solver->solve()) {
-      return false;
+      solved_ = false;
     }
 
     qp_soln = solver->getSolution();
 
-    if (!TrustRegionSatisfied()) {
-      // Reject solution
-      omega = gamma_fail*omega;
-      continue;
-    }
+    // if (!TrustRegionSatisfied()) {
+    //   // Reject solution
+    //   omega = gamma_fail*omega;
+    //   continue;
+    // }
 
-    decimal_t rho = AccuracyRatio();
-    if (rho > rho_1) {
-      // Reject solution
-      Delta = beta_fail * Delta;
-      continue;
-    }
+    // decimal_t rho = AccuracyRatio();
+    // if (rho > rho_1) {
+    //   // Reject solution
+    //   Delta = beta_fail * Delta;
+    //   continue;
+    // }
 
-    // Accept solution
-    if (rho < rho_0) {
-      // Increase trust region region only if good quality solution
-      Delta = std::min(beta_succ*Delta, Delta_0);
-    }
+    // // Accept solution
+    // if (rho < rho_0) {
+    //   // Increase trust region region only if good quality solution
+    //   Delta = std::min(beta_succ*Delta, Delta_0);
+    // }
 
-    bool state_ineq_con_satisfied = SatisfiesStateInequalityConstraints();
-    if (state_ineq_con_satisfied) {
-      omega = omega_0;
-    } else {
-      // Increase penalty for state inequality constraints
-      omega = std::min(gamma_fail*omega, omega_max);
-    }
-    if (omega > omega_max) {
-      solved_ = false;
-      return false;
-    }
+    // bool state_ineq_con_satisfied = SatisfiesStateInequalityConstraints();
+    // if (state_ineq_con_satisfied) {
+    //   omega = omega_0;
+    // } else {
+    //   // Increase penalty for state inequality constraints
+    //   omega = std::min(gamma_fail*omega, omega_max);
+    // }
+    // if (omega > omega_max) {
+    //   solved_ = false;
+    //   return false;
+    // }
 
-    if (ConvergenceMetric() < convergence_threshold) {
-      solved_ = true;
-    }
+    // if (ConvergenceMetric() < convergence_threshold) {
+    //   solved_ = true;
+    // }
 
     // Update cached solution
     for (size_t jj = 0; jj < N; jj++) {
@@ -1201,19 +1376,19 @@ bool TOP::Solve() {
     for (size_t jj = 0; jj < N-1; jj++) {
       Uprev[jj] = qp_soln.block(state_dim*N + control_dim*jj, 0, control_dim, 1);
     }
-
-    if (solved_ && state_ineq_con_satisfied) {
-      return true;
-    }
+    // if (solved_ && state_ineq_con_satisfied) {
+    //   return true;
+    // }
   }
 
-  if (SatisfiesStateInequalityConstraints()) {
-    solved_ = true;
-    return true;
-  } else {
-    solved_ = false;
-    return false;
-  }
+  // if (SatisfiesStateInequalityConstraints()) {
+  //   solved_ = true;
+  //   return true;
+  // } else {
+  //   solved_ = false;
+  //   return false;
+  // }
+  return solved_;
 }
 
 void TOP::PolishSolution() {

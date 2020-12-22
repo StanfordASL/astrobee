@@ -133,6 +133,12 @@ class TOP {
   void ResetSCPParams();
   void UpdateProblemDimension(size_t N_);
 
+  void SetSimpleConstraints();
+  void SetSimpleCosts();
+
+  void UpdateSimpleConstraints();
+  void UpdateSimpleCosts();
+
   void ComputeSignedDistances();
   void InitTrajStraightline();
   void UpdateDoubleIntegrator();
