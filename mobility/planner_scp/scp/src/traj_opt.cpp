@@ -76,6 +76,9 @@ TOP::TOP(decimal_t Tf_, int N_)
   x_min(1) = pos_min_(1);
   x_min(2) = pos_min_(2);
 
+  std::cout << "Min position" << x_min(0) << x_min(1) << x_min(2) << std::endl;
+  std::cout << "Min quaternion" << x_min(6) << x_min(7) << x_min(8) << x_min(9) <<std::endl;
+
   ResetSCPParams();
   UpdateProblemDimension(N);
 
@@ -96,13 +99,23 @@ TOP::TOP(decimal_t Tf_, int N_)
 // }
 
 size_t TOP::GetNumTOPVariables() {
-  // TODO(acauligi): Only state and control (no slack vars yet)
-  return state_dim*N + control_dim*(N-1) + control_dim*(N-1);
+  // TODO(somrita): Continue updating these
+  return state_dim*N // State variables
+  + control_dim*(N-1) // Control variables
+  + control_dim*(N-1) // Force and moment norm slack variables
+  + state_bd_dim*(N-1) // State LB slack variables
+  // + state_bd_dim*(N-1) // State UB slack variables
+  ;
 }
 
 size_t TOP::GetNumTOPConstraints() {
-  // TODO(acauligi): only dynamics and boundary conditions
-  return state_dim*(N-1) + 2*state_dim + 2*10*(N-1);
+  // TODO(somrita): Continue updating these
+  return state_dim*(N-1) // Dynamics
+  + 2*state_dim // Initial and final boundary conditions
+  + 2*10*(N-1) // Force and moment norm constraints
+  + 2*state_bd_dim*(N-1) // State LB constraints
+  // + 2*state_bd_dim*(N-1) // State UB constraints
+  ;
 }
 
 void TOP::ResetSCPParams() {
@@ -314,10 +327,71 @@ void TOP::SetSimpleConstraints() {
     for (size_t jj = 0; jj < control_dim_lin; jj++) {
       linear_con_mat.insert(row_idx, state_dim*N+control_dim*(N-1)+control_dim*ii+jj) = 1.0;
     }
-    upper_bound(row_idx) = desired_accel_;
+    upper_bound(row_idx) = mass * desired_accel_;
 
     row_idx++;
   }
+
+  // Moment constraints
+  for (size_t ii = 0; ii < N-1; ii++) {
+    // -s <=0
+    for (size_t jj = 0; jj < control_dim_nlin; jj++) {
+      linear_con_mat.insert(row_idx, state_dim*N+control_dim*(N-1)+ii*control_dim+control_dim_lin+jj) = -1.0;
+      upper_bound(row_idx) = 0.0;
+      row_idx++;
+    }
+    // -s - a <= 0
+    for (size_t jj = 0; jj < control_dim_nlin; jj++){
+      linear_con_mat.insert(row_idx, state_dim*N+control_dim*(N-1)+ii*control_dim+control_dim_lin+jj) = -1.0;
+      linear_con_mat.insert(row_idx, state_dim*N+control_dim*ii+control_dim_lin+jj) = -1.0;
+      upper_bound(row_idx) = 0.0;
+      row_idx++;
+    }
+    // a - s <= 0
+    for (size_t jj = 0; jj < control_dim_nlin; jj++){
+      linear_con_mat.insert(row_idx, state_dim*N+control_dim*(N-1)+ii*control_dim+control_dim_lin+jj) = -1.0;
+      linear_con_mat.insert(row_idx, state_dim*N+control_dim*ii+control_dim_lin+jj) = 1.0;
+      upper_bound(row_idx) = 0.0;
+      row_idx++;
+    }
+    // sum_over_i(s_ik) <= alpha_max
+    for (size_t jj = 0; jj < control_dim_nlin; jj++){
+      linear_con_mat.insert(row_idx, state_dim*N+control_dim*(N-1)+ii*control_dim+control_dim_lin+jj) = 1.0;
+      Vec3 alpha_;
+      alpha_.setOnes();
+      alpha_ *= desired_alpha_;
+      Vec3 M_ = J*alpha_;
+      upper_bound(row_idx) = M_.minCoeff();
+    }
+    row_idx += 1;
+    
+  }
+
+  // State LB
+  for (size_t ii = 0; ii < N-1; ii++) {
+    for (size_t jj = 0; jj < state_bd_dim; jj++) {
+      size_t slack_var_idx = state_dim*N+control_dim*(N-1)+control_dim*(N-1)+state_bd_dim*ii+jj;
+      // -z_ik <= 0
+      linear_con_mat.insert(row_idx, slack_var_idx) = -1.0;
+      upper_bound(row_idx) = 0;
+      row_idx++;
+
+      // -x_ik -z_ik <= -x_min(i) ignoring initial condition ii=0
+      linear_con_mat.insert(row_idx, slack_var_idx) = -1.0;
+      if (jj<=2) {
+        // position x_min[0...2]
+        linear_con_mat.insert(row_idx, state_dim*(ii+1)+jj) = -1.0;
+        upper_bound(row_idx) = -x_min(jj);
+      }
+      else {
+        // quaternion x_min[6...9]
+        linear_con_mat.insert(row_idx, state_dim*(ii+1)+jj+3) = -1.0;
+        upper_bound(row_idx) = -x_min(jj+3);
+      }
+      row_idx++;
+    }
+  }
+
 }
 
 void TOP::SetSimpleCosts() {
@@ -335,6 +409,17 @@ void TOP::SetSimpleCosts() {
       hessian.insert(state_dim*N+control_dim*ii+jj, state_dim*N+control_dim*ii+jj) = 10.0;
     }
   }
+
+  // TODO(somrita): Put this block back
+  // // Add penalty for slack variables associated with max(g(x),0)
+  // size_t row_idx = state_dim*N + control_dim*(N-1) + control_dim*(N-1);
+
+  // // Penalty for state upper and lower bounds
+  // // TODO(somrita): Make this 2*state_bd_dim*(N-1) when UB is added
+  // for (size_t ii = 0; ii < state_bd_dim*(N-1); ii++) {
+  //   gradient(row_idx) = omega;
+  //   row_idx++;
+  // }
 }
 
 void TOP::UpdateSimpleConstraints() {
@@ -399,6 +484,35 @@ void TOP::UpdateSimpleConstraints() {
     upper_bound(row_idx+ii) = xg(ii);
   }
   row_idx += state_dim;
+
+  // TODO(somrita): Remove this block
+  // // Skip over force and moment constraints 
+  // row_idx += 2*10*(N-1);
+
+  // // State LB
+  // for (size_t ii = 0; ii < N-1; ii++) {
+  //   for (size_t jj = 0; jj < state_bd_dim; jj++) {
+  //     size_t slack_var_idx = state_dim*N+control_dim*(N-1)+control_dim*(N-1)+state_bd_dim*ii+jj;
+  //     // -z_ik <= 0
+  //     linear_con_mat.coeffRef(row_idx, slack_var_idx) = -1.0;
+  //     upper_bound(row_idx) = 0;
+  //     row_idx++;
+
+  //     // -x_ik -z_ik <= x_min(i) ignoring initial condition ii=0
+  //     linear_con_mat.coeffRef(row_idx, slack_var_idx) = -1.0;
+  //     if (jj<=2) {
+  //       // position x_min[0...2]
+  //       linear_con_mat.coeffRef(row_idx, state_dim*(ii+1)+jj) = -1.0;
+  //       upper_bound(row_idx) = -x_min(jj);
+  //     }
+  //     else {
+  //       // quaternion x_min[6...9]
+  //       linear_con_mat.coeffRef(row_idx, state_dim*(ii+1)+jj+3) = -1.0;
+  //       upper_bound(row_idx) = -x_min(jj+3);
+  //     }
+  //     row_idx++;
+  //   }
+  // }
 }
 
 void TOP::UpdateSimpleCosts() {
@@ -416,6 +530,17 @@ void TOP::UpdateSimpleCosts() {
       hessian.coeffRef(state_dim*N+control_dim*ii+jj, state_dim*N+control_dim*ii+jj) = 10.0;
     }
   }
+
+  // TODO(somrita): Put this block back
+  // // Add penalty for slack variables associated with max(g(x),0)
+  // size_t row_idx = state_dim*N + control_dim*(N-1) + control_dim*(N-1);
+
+  // // Penalty for state upper and lower bounds
+  // // TODO(somrita): Make this 2*state_bd_dim*(N-1) when UB is added
+  // for (size_t ii = 0; ii < state_bd_dim*(N-1); ii++) {
+  //   gradient(row_idx) = omega;
+  //   row_idx++;
+  // } 
 }
 
 void TOP::ComputeSignedDistances() {
