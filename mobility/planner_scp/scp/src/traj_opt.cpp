@@ -177,9 +177,10 @@ void TOP::UpdateProblemDimension(size_t N_) {
   InitTrajStraightline();
   UpdateDynamics();
 
-  linear_con_mat.resize(num_cons, num_vars);
-  lower_bound.resize(num_cons);
-  upper_bound.resize(num_cons);
+  for (size_t ii = 0; ii < num_cons; ii++) {
+    lower_bound(ii) = -OsqpEigen::INFTY;
+    upper_bound(ii) = OsqpEigen::INFTY;
+  }
 
   SetSimpleConstraints();
   SetSimpleCosts();
