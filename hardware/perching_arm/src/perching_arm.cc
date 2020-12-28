@@ -262,6 +262,7 @@ void PerchingArm::ConstructDataPacket(double* data, size_t data_len) {
     data[0] = 1.;
     for (size_t jj = 0; jj < 35; jj++) {
       data[1+jj] = raw_.grip.line[jj];
+      raw_.grip.line[jj] = '-';
     }
   } else {
     data[0] = 0.0;
@@ -393,13 +394,9 @@ void PerchingArm::ProcessGeckoGripperStateTelemetry(
 
 void PerchingArm::ProcessSDCardStateTelemetry(
     const host_sd_card_state_telemetry_t *packet) {
-  std::cout << "Received SD card packet:" << std::endl;
-  std::cout << std::endl;
   for (size_t ii = 0; ii < 35; ii++) {
     raw_.grip.line[ii] = packet->line[ii];
-    std::cout << raw_.grip.line[ii];
   }
-  std::cout << std::endl;
 }
 
 void PerchingArm::ProcessServoJointStateTelemetry(

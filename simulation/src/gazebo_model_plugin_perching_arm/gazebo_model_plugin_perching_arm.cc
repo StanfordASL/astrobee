@@ -162,7 +162,7 @@ class GazeboModelPluginPerchingArm : public FreeFlyerModelPlugin {
     msg_.effort.resize(joints_.size() + 1);
 
     // Number of double's to be sent to /joint_states for gripper
-    gpg_n_doubles = 35;
+    gpg_n_doubles = 36;
     gecko_msg_.header.frame_id =  GetModel()->GetName();
     gecko_msg_.name.resize(gpg_n_doubles);
     gecko_msg_.position.resize(gpg_n_doubles);
@@ -228,6 +228,8 @@ class GazeboModelPluginPerchingArm : public FreeFlyerModelPlugin {
     for (size_t ii = 0; ii < 35; ii++) {
       line[ii] = '-';
     }
+    max_line = 6;
+    line_count = 1;
   }
 
   // Called on simulation reset
@@ -384,6 +386,7 @@ class GazeboModelPluginPerchingArm : public FreeFlyerModelPlugin {
       } else if (msg.name[i] == "gecko_gripper_open_exp") {
         exp_idx = static_cast<int16_t>(msg.position[0]);
         file_is_open = true;
+        read_SD = true;
         continue;
       } else if (msg.name[i] == "gecko_gripper_next_record") {
         continue;
@@ -392,9 +395,78 @@ class GazeboModelPluginPerchingArm : public FreeFlyerModelPlugin {
       } else if (msg.name[i] == "gecko_gripper_close_exp") {
         experiment_in_progress = false;
         file_is_open = false;
+        read_SD = false;
       } else if (msg.name[i] == "gecko_gripper_status") {
         continue;
       } else if (msg.name[i] == "gecko_gripper_record") {
+        if (line_count == 1) {
+          line[0]= '2';
+          line[1]= '6';
+          line[2]= '6';
+          line[3]= '4';
+          line[4]= '9';
+        } else if (line_count == 2) {
+          line[0]= '2';
+          line[1]= '6';
+          line[2]= '6';
+          line[3]= '5';
+          line[4]= '1';
+        } else if (line_count == 3) {
+          line[0]= '2';
+          line[1]= '6';
+          line[2]= '6';
+          line[3]= '5';
+          line[4]= '3';
+        } else if (line_count == 4) {
+          line[0]= '2';
+          line[1]= '6';
+          line[2]= '6';
+          line[3]= '6';
+          line[4]= '5';
+        } else if (line_count == 5) {
+          line[0]= '2';
+          line[1]= '6';
+          line[2]= '6';
+          line[3]= '7';
+          line[4]= '0';
+        } else if (line_count == 6) {
+          line[0]= '2';
+          line[1]= '6';
+          line[2]= '6';
+          line[3]= '7';
+          line[4]= '5';
+        }
+        if (line_count != max_line) line_count++;
+        line[5]= ',';
+        line[6]= 'D';
+        line[7]= 'U';
+        line[8]= '*';
+        line[9]= ',';
+        line[10]= '2';
+        line[11]= '7';
+        line[12]= ' ';
+        line[13]= ' ';
+        line[14]= ',';
+        line[15]= '2';
+        line[16]= '7';
+        line[17]= ' ';
+        line[18]= ' ';
+        line[19]= ',';
+        line[20]= '2';
+        line[21]= '7';
+        line[22]= ' ';
+        line[23]= ' ';
+        line[24]= ',';
+        line[25]= '2';
+        line[26]= '7';
+        line[27]= ' ';
+        line[28]= ' ';
+        line[29]= ',';
+        line[30]= '1';
+        line[31]= '0';
+        line[32]= '0';
+        line[33]= ',';
+        line[34]= '-';
         continue;
       } else if (msg.name[i] == "gecko_gripper_exp") {
         continue;
@@ -519,7 +591,10 @@ class GazeboModelPluginPerchingArm : public FreeFlyerModelPlugin {
     if (read_SD) {
       data[0] = 1.;
       for (size_t jj = 0; jj < 35; jj++) {
-        data[1+jj] = line[jj];
+        data[1+jj] = static_cast<double>(line[jj]);
+      }
+      for (size_t jj = 0; jj < 35; jj++) {
+        line[jj] = '-';
       }
     } else {
       data[0] = 0.0;
@@ -573,6 +648,8 @@ class GazeboModelPluginPerchingArm : public FreeFlyerModelPlugin {
   int16_t delay_ms;
   char line[35];
   bool read_SD;
+  size_t max_line;
+  size_t line_count;
 };
 
 // Register this plugin with the simulator

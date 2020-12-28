@@ -256,7 +256,7 @@ class PerchingArmNode : public ff_util::FreeFlyerNodelet {
     // - velocity is in radians per second
     // - power is in watts
 
-    double perc = -100.0;
+    double perc = 0.0;    // TODO(acauligi): perc here set so that it appears closed
 
     // Allocate the joint state message
     msg_.name.resize(7);
@@ -307,7 +307,7 @@ class PerchingArmNode : public ff_util::FreeFlyerNodelet {
 
     // TODO(acauligi): check math with Tony
     // Stuff gecko perching gripper into joint state values
-    size_t gpg_n_doubles = 35;     // TODO(acauligi): convert from hard coded value?
+    size_t gpg_n_doubles = 36;     // TODO(acauligi): convert from hard coded value?
     gecko_msg_.header.stamp = ros::Time::now();
     gecko_msg_.name.resize(gpg_n_doubles);
     gecko_msg_.position.resize(gpg_n_doubles);
