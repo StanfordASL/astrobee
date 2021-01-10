@@ -13,7 +13,7 @@ class GeckoNode(object):
       self.gpg_n_doubles = 35
 
       self.file_is_open = False
-      self.file_still_reading = False 
+      self.file_still_reading = True
       self.file_written = False
 
       self.line_buffer = []
@@ -32,7 +32,6 @@ class GeckoNode(object):
         self.file_is_open = False
         return
       self.file_is_open = True
-      self.file_still_reading = True
 
       all_dummy = True
       for ii in range(5):
@@ -49,10 +48,12 @@ class GeckoNode(object):
       if len(self.line_buffer) == self.buffer_len:
         self.line_buffer = self.line_buffer[1:]
       self.line_buffer.append(line_data)
-      self.file_lines.append(line_data)
 
       if len(self.line_buffer) == self.buffer_len and len(set(self.line_buffer)) == 1:
         self.file_still_reading = False
+
+      if self.file_still_reading:
+        self.file_lines.append(line_data)
       return
 
 
@@ -75,7 +76,7 @@ class GeckoNode(object):
       self.pub.publish(msg) 
 
     def start(self):
-      rate = rospy.Rate(10)
+      rate = rospy.Rate(30)
 
       while not rospy.is_shutdown():
         if not self.file_is_open and not self.file_written:
@@ -84,7 +85,8 @@ class GeckoNode(object):
         elif self.file_is_open and self.file_still_reading:
           self.send_record()
         else:
-          self.send_close_exp()
+          for _ in range(5):
+            self.send_close_exp()
           if not self.file_written:
             write_file = open(os.path.join(os.environ['SOURCE_PATH'], self.fn), 'w')
             if os.path.isfile(os.path.join('/etc/robotname')):
@@ -99,6 +101,8 @@ class GeckoNode(object):
         if self.file_written and not self.file_is_open:
           rospy.loginfo('Shutting down node')
           return
+        # else:
+        #   self.send_close_exp()
 
         if len(self.file_lines) > 0 and len(self.file_lines) % 500 == 0:
           rospy.loginfo('Number of lines read: {}'.format(len(self.file_lines)))

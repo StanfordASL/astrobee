@@ -397,10 +397,10 @@ void PerchingArm::ProcessSDCardStateTelemetry(
   for (size_t ii = 0; ii < 35; ii++) {
     raw_.grip.line[ii] = packet->line[ii];
   }
-  for (size_t ii = 0; ii < 35; ii++) {
-    std::cout << raw_.grip.line[ii];;
-  }
-  std::cout << std::endl;
+  // for (size_t ii = 0; ii < 35; ii++) {
+  //   std::cout << raw_.grip.line[ii];;
+  // }
+  // std::cout << std::endl;
 }
 
 void PerchingArm::ProcessServoJointStateTelemetry(

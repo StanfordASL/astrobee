@@ -463,6 +463,8 @@ class PerchingArm {
 
   typedef struct {
     host_arm_telemetry_prefix_t prefix;
+    uint16_t last_status_read_time;
+    uint16_t error_status;
 
     char line[35];
   } __attribute__((packed)) host_sd_card_state_telemetry_t;
