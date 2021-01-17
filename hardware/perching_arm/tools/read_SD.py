@@ -91,33 +91,37 @@ class GeckoNode(object):
     def start(self):
       rate = rospy.Rate(30)
 
+      write_file = open(os.path.join(os.environ['SOURCE_PATH'], self.fn), 'w')
       if os.path.isdir(os.path.join('/etc/robotname')):
         # File name if running on Astrobee robot
         write_file = open(os.path.join('data','gecko_data',self.fn), 'w')
       write_file.writelines('')
       write_file.close()
+      lines_so_far = []
 
       record_num = 0    # 0-indexed
       skip = 50000
 
+      ctr = 0
       while not rospy.is_shutdown():
         if not self.file_is_open and not self.file_written:
-          self.send_open_exp(float(self.fn[:-4]))   # Omit '.TXT' from arg
-          self.seek_record(record_num)
-          rospy.loginfo('Sent command to open {}'.format(self.fn))
-        elif self.file_is_open and self.file_still_reading:
+          if ctr < 10:
+            self.send_open_exp(float(self.fn[:-4]))   # Omit '.TXT' from arg
+            self.seek_record(record_num)
+            ctr += 1
+            rospy.loginfo('Sent command to open {}'.format(self.fn))
+        elif self.file_is_open and self.file_still_reading and len(self.file_lines) < skip:
+          ctr = 0
           self.send_record()
         else:
           for _ in range(5):
             self.send_close_exp()
-          if not self.file_written or len(self.file_lines) == skip:
+          if not self.file_written and len(self.file_lines) == skip:
             write_file = open(os.path.join(os.environ['SOURCE_PATH'], self.fn), 'w')
             if os.path.isdir(os.path.join('/etc/robotname')):
               # File name if running on Astrobee robot
               write_file = open(os.path.join('data','gecko_data',self.fn), 'w')
 
-            with open(write_file, 'r') as read_file:
-              lines_so_far = read_file.readlines()
             lines_so_far.extend(self.file_lines[:-(self.buffer_len-1)])
 
             write_file.writelines(lines_so_far)
@@ -130,7 +134,7 @@ class GeckoNode(object):
             self.send_close_exp()
           rospy.loginfo('Read {} lines so far'.format(len(lines_so_far)))
           record_num += skip
-          self.reset(self.fn)
+          self.reset(self.fn.split('.TXT')[0])
         # elif self.file_written and self.file_is_open:
         #   self.send_close_exp()
 
