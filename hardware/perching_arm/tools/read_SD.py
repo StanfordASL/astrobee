@@ -102,7 +102,7 @@ class GeckoNode(object):
             self.send_close_exp()
           if not self.file_written:
             write_file = open(os.path.join(os.environ['SOURCE_PATH'], self.fn), 'w')
-            if os.path.isfile(os.path.join('/etc/robotname')):
+            if os.path.isdir(os.path.join('/etc/robotname')):
               # File name if running on Astrobee robot
               write_file = open(os.path.join('data','gecko_data',self.fn), 'w')
 
