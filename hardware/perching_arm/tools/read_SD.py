@@ -91,9 +91,19 @@ class GeckoNode(object):
     def start(self):
       rate = rospy.Rate(30)
 
+      if os.path.isdir(os.path.join('/etc/robotname')):
+        # File name if running on Astrobee robot
+        write_file = open(os.path.join('data','gecko_data',self.fn), 'w')
+      write_file.writelines('')
+      write_file.close()
+
+      record_num = 0    # 0-indexed
+      skip = 50000
+
       while not rospy.is_shutdown():
         if not self.file_is_open and not self.file_written:
           self.send_open_exp(float(self.fn[:-4]))   # Omit '.TXT' from arg
+          self.seek_record(record_num)
           rospy.loginfo('Sent command to open {}'.format(self.fn))
         elif self.file_is_open and self.file_still_reading:
           self.send_record()
@@ -106,16 +116,25 @@ class GeckoNode(object):
               # File name if running on Astrobee robot
               write_file = open(os.path.join('data','gecko_data',self.fn), 'w')
 
-            write_file.writelines(self.file_lines[:-(self.buffer_len-1)])
+            with open(write_file, 'r') as read_file:
+              lines_so_far = read_file.readlines()
+            lines_so_far.extend(self.file_lines[:-(self.buffer_len-1)])
+
+            write_file.writelines(lines_so_far)
             write_file.close()
             rospy.loginfo('Done writing file {}'.format(self.fn))
             self.file_written = True
 
         if self.file_written and not self.file_is_open:
-          rospy.loginfo('Shutting down node')
-          return
+          rospy.loginfo('Read {} lines so far'.format(len(lines_so_far)))
+          record_num += skip
+          self.reset(self.fn)
         # elif self.file_written and self.file_is_open:
         #   self.send_close_exp()
+
+        if record_num > 200000:
+          rospy.loginfo('Shutting down node')
+          return
 
         if len(self.file_lines) > 0 and len(self.file_lines) % 500 == 0:
           rospy.loginfo('Number of lines read: {}'.format(len(self.file_lines)))
