@@ -9,22 +9,30 @@ import rospy
 from sensor_msgs.msg import JointState
 
 class GeckoNode(object):
-    def __init__(self, fn):
+    def __init__(self):
       self.gpg_n_doubles = 35
 
       self.file_is_open = False
       self.file_still_reading = True
       self.file_written = False
 
+      self.file_lines = []
       self.line_buffer = []
       self.buffer_len = 10
 
-      self.fn = str(fn)+'.TXT'
-      print(self.fn)
-      self.file_lines = []
-
       self.pub = rospy.Publisher('/joint_goals', JointState, queue_size=10)
       rospy.Subscriber("/gecko_states", JointState, self.callback)
+
+    def reset(self, fn):
+      self.file_is_open = False
+      self.file_still_reading = True
+      self.file_written = False
+
+      self.file_lines = []
+      self.line_buffer = []
+
+      self.fn = str(fn)+'.TXT'
+      print(self.fn)
 
     def callback(self, msg):
       position = msg.position
@@ -56,7 +64,6 @@ class GeckoNode(object):
         self.file_lines.append(line_data)
       return
 
-
     def send_open_exp(self, IDX):
       msg = JointState()
       msg.name = ['gecko_gripper_open_exp']
@@ -68,6 +75,12 @@ class GeckoNode(object):
       msg.name = ['gecko_gripper_record']
       msg.position.append(0.0)
       self.pub.publish(msg) 
+
+    def seek_record(self, RN):
+      msg = JointState()
+      msg.name = ['gecko_gripper_seek_record']
+      msg.position.append(RN)
+      self.pub.publish(msg)
 
     def send_close_exp(self): 
       msg = JointState()
@@ -101,7 +114,7 @@ class GeckoNode(object):
         if self.file_written and not self.file_is_open:
           rospy.loginfo('Shutting down node')
           return
-        # else:
+        # elif self.file_written and self.file_is_open:
         #   self.send_close_exp()
 
         if len(self.file_lines) > 0 and len(self.file_lines) % 500 == 0:
@@ -122,7 +135,12 @@ if __name__ == '__main__':
   try:
     rospy.init_node('gecko_gripper_hub', anonymous=True)
     signal.signal(signal.SIGINT, handler)
-    gecko_node = GeckoNode(sys.argv[1])
-    gecko_node.start()
+
+    gecko_node = GeckoNode()
+    filenames = sys.argv[1:]
+
+    for fn in filenames:
+      gecko_node.reset(fn)
+      gecko_node.start()
   except rospy.ROSInterruptException:
     pass
