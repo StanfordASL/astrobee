@@ -39,10 +39,34 @@ class TOP {
   size_t state_dim_lin;
   size_t state_dim_nlin;
   size_t control_dim;
+  size_t control_dim_lin;
+  size_t control_dim_nlin;
   size_t state_bd_dim;
+  size_t lin_vel_dim;
+  size_t ang_vel_dim;
   size_t N;
   decimal_t dh;
   decimal_t Tf;
+
+  bool enforce_init_cond;
+  bool enforce_final_cond;
+  bool enforce_lin_dynamics;
+  bool enforce_rot_dynamics;
+  bool enforce_force_norm;
+  bool enforce_moment_norm;
+  bool enforce_state_LB;
+  bool enforce_state_UB;
+  bool enforce_lin_vel_norm;
+  bool enforce_ang_vel_norm;
+  bool enforce_trust_region_const;
+  bool enforce_obs_avoidance_const;
+
+  bool penalize_total_force;
+  bool penalize_total_moment;
+  size_t num_force_norm_slack_vars;
+  size_t num_force_norm_slack_vars_per_iter;
+  size_t num_moment_norm_slack_vars;
+  size_t num_moment_norm_slack_vars_per_iter;
 
   bool free_final_state;
   bool state_con_strict;
@@ -53,6 +77,12 @@ class TOP {
 
   OsqpEigen::Solver* solver;
   decimal_t abs_tol_;
+  decimal_t rel_tol_;
+  decimal_t primal_tol_;
+  decimal_t dual_tol_;
+  decimal_t rho_;
+  decimal_t sigma_;
+  size_t max_iter_solver_;
   bool verbose_;
   bool warm_start_;
   bool solver_ready_;
@@ -85,6 +115,7 @@ class TOP {
 
   // SCP parameters
   size_t max_iter;
+  size_t n_iter;
   decimal_t Delta_0;
   decimal_t Delta;
   decimal_t omega_0;
@@ -145,7 +176,7 @@ class TOP {
   void UpdateF(Vec7& f, Vec13& X, Vec6& U);
   void UpdateA(Mat7& A, Vec13& X, Vec6& U);
   void UpdateB(Mat7x3& B, Vec13& X, Vec6& U);
-  void UpdateDynamics();
+  void UpdateRotationalDynamics();
 
   void SetHessianMatrix();
   void SetGradient();
@@ -177,6 +208,8 @@ class TOP {
 
   bool Solve();
   void PolishSolution();
+  void ValidationChecks();
+  void NormalizeQuaternions();
 };
 
 }  //  namespace scp
