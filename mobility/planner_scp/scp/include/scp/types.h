@@ -49,6 +49,7 @@ typedef Eigen::Matrix<decimal_t, 4, 4> Mat4;
 typedef Eigen::Matrix<decimal_t, 6, 6> Mat6;
 typedef Eigen::Matrix<decimal_t, 7, 7> Mat7;
 typedef Eigen::Matrix<decimal_t, 13, 13> Mat13;
+typedef Eigen::Matrix<decimal_t, 4, 3> Mat4x3;
 typedef Eigen::Matrix<decimal_t, 6, 3> Mat6x3;
 typedef Eigen::Matrix<decimal_t, 7, 3> Mat7x3;
 typedef Eigen::Matrix<decimal_t, 13, 6> Mat13x6;
