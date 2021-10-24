@@ -17,62 +17,88 @@
 
 cmake_minimum_required(VERSION 2.8.3)
 
-option(NASA "Use NASA's wonderful build system" ON)
+option(NASA "Use NASA's wonderful build system" ON)  # use NASA build system
+option(DIRECT_BUILD "Use Bullet source for test build" ON)  # build bullet3 binaries directly (directory included)
 
 project(scp)
+
+if (DIRECT_BUILD)
+  add_subdirectory(bullet3)  # for direct builds, does not require separate bullet3 installation
+endif()
 
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wall -Wno-deprecated-declarations  -Werror=return-type -DBOOST_MATH_DISABLE_FLOAT128")
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${PROJECT_SOURCE_DIR}/cmake")
 
-find_package(osqp REQUIRED)
-find_package(OsqpEigen REQUIRED)
-find_package(Bullet REQUIRED)
+if (NOT DIRECT_BUILD)
+  find_package(osqp REQUIRED)
+  find_package(OsqpEigen REQUIRED)
+  find_package(Bullet REQUIRED)
+endif()
+
 find_package(Eigen3 REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system)
 
-if (NOT NASA)
-  catkin_package(
-    INCLUDE_DIRS include
-    LIBRARIES ${PROJECT_NAME}
-#  CATKIN_DEPENDS roscpp visualization_msgs
-#  DEPENDS system_lib
-  )
-endif()
+if (NOT DIRECT_BUILD)
+  # for testing with bullet3 libraries separately built
+  if (NOT NASA)
+    catkin_package(
+      INCLUDE_DIRS include
+      LIBRARIES ${PROJECT_NAME}
+  #  CATKIN_DEPENDS roscpp visualization_msgs
+  #  DEPENDS system_lib
+    )
+  endif()
 
-include_directories(SYSTEM
-  include 
-  ${BULLET_INCLUDE_DIRS} 
-  ${EIGEN3_INCLUDE_DIR}
-  ${Boost_INCLUDE_DIRS}
-  ${catkin_INCLUDE_DIRS}
-)
-
-add_library(${PROJECT_NAME}
-  src/bullet_collision_checker.cpp
-  src/traj_opt.cpp
-)
-
-target_link_libraries(${PROJECT_NAME}
-  OsqpEigen::OsqpEigen
-  ${BULLET_LIBRARIES}
-  ${catkin_LIBRARIES}
-)
-
-if (NOT NASA)
-  install(
-    TARGETS ${PROJECT_NAME}
-    ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-    LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-    RUNTIME DESTINATION ${CATKIN_GLOBAL_BIN_DESTINATION}
+  include_directories(SYSTEM
+    include 
+    ${BULLET_INCLUDE_DIRS} 
+    ${EIGEN3_INCLUDE_DIR}
+    ${Boost_INCLUDE_DIRS}
+    ${catkin_INCLUDE_DIRS}
   )
 
-  install(DIRECTORY include/scp/
-    DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
+  add_library(${PROJECT_NAME}
+    src/bullet_collision_checker.cpp
+    src/traj_opt.cpp
   )
 
-  add_executable(test1 test/test1.cpp)
-  target_link_libraries(test1
+  target_link_libraries(${PROJECT_NAME}
+    OsqpEigen::OsqpEigen
+    ${BULLET_LIBRARIES}
+    ${catkin_LIBRARIES}
+  )
+
+  if (NOT NASA)
+    install(
+      TARGETS ${PROJECT_NAME}
+      ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+      LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+      RUNTIME DESTINATION ${CATKIN_GLOBAL_BIN_DESTINATION}
+    )
+
+    install(DIRECTORY include/scp/
+      DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
+    )
+
+    add_executable(test1 test/test1.cpp)
+    target_link_libraries(test1
+      scp
+    )
+
+    add_executable(test-bullet test/test_bullet.cpp)
+    target_link_libraries(test-bullet
     scp
+    )
+  endif()
+else()
+  # direct build, for testing without bullet3 libraries or astrobee build system
+  add_library(bullet_wrapper src/bullet_collision_checker.cpp)
+  target_link_libraries(bullet_wrapper ${catkin_LIBRARIES} ${EIGEN_LIBRARIES} ${Boost_LIBRARIES} BulletCollision BulletDynamics LinearMath)
+  target_include_directories(bullet_wrapper PUBLIC ${catkin_INCLUDE_DIRS} ${EIGEN3_INCLUDE_DIRS} ${Boost_INCLUDE_DIRS} include bullet3/src)
+
+  add_executable(test-bullet test/test_bullet.cpp)
+  target_link_libraries(test-bullet
+    bullet_wrapper
   )
 endif()

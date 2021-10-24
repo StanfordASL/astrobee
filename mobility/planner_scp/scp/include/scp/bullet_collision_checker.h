@@ -81,6 +81,11 @@ class BulletCollisionChecker {
     std::vector<btCollisionObject*> GetConvexComponents(btCollisionObject* co);
     std::vector<btCollisionObject*> GetConvexComponents(btCollisionShape* cs, btTransform tr);
 
+    void AddRobot(scp::Vec3 a=scp::Vec3{0.3, 0.3, 0.3},
+                  scp::Vec3 r=scp::Vec3{0.0, 0.0, 0.0},
+                  scp::Quat q=scp::Quat{0.0, 0.0, 0.0, 1.0});  // add a robot obstacle (ellipsoid)
+    void AddObstacle(scp::Vec3 a, scp::Vec3 r, scp::Quat q);  // add arbitrary obstacle (ellipsoid)
+
     bool IsFreeState(scp::Vec3 v, scp::Quat q);
     bool IsFreeMotion(scp::Vec3 v, scp::Vec3 w);
     bool IsFreeMotion(scp::Vec3 v, scp::Quat vrot, scp::Vec3 w, scp::Quat wrot);

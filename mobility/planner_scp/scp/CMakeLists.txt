@@ -16,7 +16,7 @@
 # under the License.
 
 cmake_minimum_required(VERSION 2.8.3)
-option(NASA "Use NASA's wonderful build system" ON)
+option(NASA "Use NASA's wonderful build system" OFF)
 if(NASA)
 	include(CMakeLists.nasa)
 else()
