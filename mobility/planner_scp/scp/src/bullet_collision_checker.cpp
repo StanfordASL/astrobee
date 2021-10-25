@@ -17,6 +17,7 @@
  */
 
 #include <scp/bullet_collision_checker.h>
+#include <scp/types.h>
 
 #include <iostream>
 #include <sstream>
@@ -49,43 +50,25 @@ struct BinarySweptConvexCollisionCallback : public btCollisionWorld::ConvexResul
 };
 
 collision_checker::BulletCollisionChecker::BulletCollisionChecker() {
-  /*
-  // std::vector<Eigen::Vector3f> bounds = load_map();
-  // btVector3 worldAabbMin(bounds[0](0), bounds[0](1), bounds[0](2));
-  // btVector3 worldAabbMax(bounds[1](0), bounds[1](1), bounds[1](2));
-  btVector3 worldAabbMin(-1000.,-1000.,-1000.);
-  btVector3 worldAabbMax(1000.,1000.,1000.);
-
-  // Build the broadphase
-  // broadphase = new btAxisSweep3(worldAabbMin, worldAabbMax, max_objects, 0, false);
-  broadphase = new btDbvtBroadphase(); // see http://www.bulletphysics.org/mediawiki-1.5.8/index.php/Broadphase
-
-  // Set up the collision configuration and the dispatcher
-  collisionConfiguration = new btDefaultCollisionConfiguration();
-  dispatcher = new btCollisionDispatcher(collisionConfiguration);
-
-  cw = new btCollisionWorld(dispatcher, broadphase, collisionConfiguration);
-
-  // dispatcher->registerCollisionCreateFunc(BOX_SHAPE_PROXYTYPE,BOX_SHAPE_PROXYTYPE,
-  //     collisionConfiguration->getCollisionAlgorithmCreateFunc(CONVEX_SHAPE_PROXYTYPE, CONVEX_SHAPE_PROXYTYPE));
-  // dispatcher->setNearCallback(&nearCallback);
-  // dispatcher->m_userData = this;
-
-  // int num_co = cw->getNumCollisionObjects();
-  // btCollisionObjectArray env_components = cw->getCollisionObjectArray();
-  // for (int i = 0; i < num_co; i++) {
-  // TODO(acauligi): convex_env_components.push_back(
-  //   GetConvexComponents((btCollisionObject*) env_components[i]));
-  // }
-
-  // convex_robot_components = GetConvexComponents(robot->getCollisionShape());
-  // SetContactDistance(.05);
+  /* Create essential bullet machinery.
   */
 
   m_coll_config = new btDefaultCollisionConfiguration();
   m_dispatcher = new btCollisionDispatcher(m_coll_config);
-  m_broadphase = new btDbvtBroadphase();
+
+  double scene_size = 100;
+  unsigned int max_objects = 100;
+  btScalar sscene_size = (btScalar) scene_size;
+  btVector3 worldAabbMin(-sscene_size, -sscene_size, -sscene_size);
+  btVector3 worldAabbMax(sscene_size, sscene_size, sscene_size);
+
+  m_broadphase = new bt32BitAxisSweep3(worldAabbMin, worldAabbMax, max_objects, 0, true);
+
+  // m_broadphase = new btDbvtBroadphase();
   m_world = new btCollisionWorld(m_dispatcher, m_broadphase, m_coll_config);
+
+  // set up the robot
+  AddRobot(scp::Vec3{0.15, 0.15, 0.15}, scp::Vec3{0.0, 0.0, 0.0});
 }
 
 collision_checker::BulletCollisionChecker::~BulletCollisionChecker() {
@@ -100,12 +83,64 @@ collision_checker::BulletCollisionChecker::~BulletCollisionChecker() {
   // delete robot;
 
   for (uint i = 0; i < convex_robot_components.size(); i++) {
-    // delete convex_robot_components[i];
+    delete convex_robot_components[i];
   }
 
   for (uint i = 0; i < convex_env_components.size(); i++) {
-    // delete convex_env_components[i];
+    delete convex_env_components[i];
   }
+}
+
+
+void BulletCollisionChecker::AddRobot(scp::Vec3 a, scp::Vec3 r, scp::Quat q) {
+  /* Add an ellipsoidal robot. Default is 0.3m sphere at the origin (Astrobee).
+  */
+  robot = new btCollisionObject();
+  SetTransformation(robot, r, q);
+  // std::cout << "Creating ellipsoidal robot with semi-major axes (xyz): " << a[0] << " " << a[1] << " " << a[2] << std::endl;
+  // btSphereShape* sphere_shape = new btSphereShape(a[0]);  // defaults to value in header
+  // robot->setCollisionShape(sphere_shape);
+
+  btVector3 pos(0.0, 0.0, 0.0);
+  btScalar rad(1.0);
+  btMultiSphereShape* ellipsoid_shape = new btMultiSphereShape(&pos, &rad, 1);
+  ellipsoid_shape->setLocalScaling(btVector3(a(0), a(1), a(2)));
+  ellipsoid_shape->setMargin(btScalar{0.0});  // disable default margin of 0.04
+  robot->setCollisionShape(ellipsoid_shape);
+
+  m_world->addCollisionObject(robot);
+
+  convex_robot_components.push_back(robot);
+}
+
+
+void BulletCollisionChecker::AddObstacle(scp::Vec3 a, scp::Vec3 r, scp::Quat q) {
+  /* Add an obstacle to the collision world. For now, assumes ellipsoidal. Details on ellipsoid
+  creation: https://pybullet.org/Bullet/phpBB3/viewtopic.php?t=808
+
+  @param:
+  r: position
+  q: quat (scalar last)
+  a: semi-major axis length
+  @return:
+  convex_env_components: updated
+  */
+  btCollisionObject* obstacle = new btCollisionObject();
+  SetTransformation(obstacle, r, q);
+  // std::cout << "Creating ellipsoidal obstacle with semi-major axes (xyz): " << a[0] << " " << a[1] << " " << a[2] << std::endl;
+  // btSphereShape* sphere_shape = new btSphereShape(a[0]);  // 0.2
+  // obstacle->setCollisionShape(sphere_shape);
+
+  btVector3 pos(0.0, 0.0, 0.0);
+  btScalar rad(1.0);
+  btMultiSphereShape* ellipsoid_shape = new btMultiSphereShape(&pos, &rad, 1);
+  ellipsoid_shape->setLocalScaling(btVector3(a(0), a(1), a(2)));
+  ellipsoid_shape->setMargin(btScalar{0.0});  // disable default margin of 0.04
+  obstacle->setCollisionShape(ellipsoid_shape);
+
+  m_world->addCollisionObject(obstacle);
+
+  convex_env_components.push_back(obstacle);
 }
 
 
@@ -114,9 +149,11 @@ void BulletCollisionChecker::SetTransformation(btCollisionObject* o, scp::Vec3 v
   o->getWorldTransform().setRotation(btQuaternion(q.x(), q.y(), q.z(), q.w()));
 }
 
+
 void BulletCollisionChecker::SetTransformation(btCollisionObject* o, scp::Vec3 v) {
   o->getWorldTransform().setOrigin(btVector3(v(0), v(1), v(2)));
 }
+
 
 std::vector<btCollisionObject*> BulletCollisionChecker::GetConvexComponents(btCollisionShape* cs) {
   btTransform tr;
@@ -124,9 +161,11 @@ std::vector<btCollisionObject*> BulletCollisionChecker::GetConvexComponents(btCo
   return GetConvexComponents(cs, tr);
 }
 
+
 std::vector<btCollisionObject*> BulletCollisionChecker::GetConvexComponents(btCollisionObject* co) {
   return GetConvexComponents(co->getCollisionShape(), co->getWorldTransform());
 }
+
 
 std::vector<btCollisionObject*> BulletCollisionChecker::GetConvexComponents(btCollisionShape* cs, btTransform tr) {
   std::vector<btCollisionObject*> convex_components;
@@ -148,13 +187,25 @@ std::vector<btCollisionObject*> BulletCollisionChecker::GetConvexComponents(btCo
 }
 
 
-
 bool BulletCollisionChecker::IsFreeState(scp::Vec3 v, scp::Quat q) {
+  /* Check if the robot geometry is collision-free.
+  @param:
+  v: position
+  q: quat (scalar last?)
+
+  @return:
+  !result.is_collision: true if state is free
+  */
+//  std::cout << "Checking: " << v << std::endl;
   SetTransformation(robot, v, q);
+  m_world->performDiscreteCollisionDetection();
   BinaryCollisionCallback result;
   m_world->contactTest(robot, result);
+
+  // std::cout << robot->getWorldTransform().getOrigin()[0] << std::endl;
   return !result.is_collision;
 }
+
 
 bool BulletCollisionChecker::IsFreeMotion(scp::Vec3 v, scp::Vec3 w) {
   bool free_motion = true;
