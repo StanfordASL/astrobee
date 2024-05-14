@@ -23,6 +23,7 @@
 #include <tf2_ros/transform_listener.h>
 
 // FSW libraries
+#include <msg_conversions/msg_conversions.h>
 #include <ff_util/ff_nodelet.h>
 #include <ff_util/ff_action.h>
 #include <ff_util/ff_service.h>
@@ -858,10 +859,7 @@ class ChoreographerNodelet : public ff_util::FreeFlyerNodelet {
       geometry_msgs::TransformStamped tf = tf_buffer_.lookupTransform(
         std::string(FRAME_NAME_WORLD), child_frame, ros::Time(0));
       pose.header = tf.header;
-      pose.pose.position.x = tf.transform.translation.x;
-      pose.pose.position.y = tf.transform.translation.y;
-      pose.pose.position.z = tf.transform.translation.z;
-      pose.pose.orientation = tf.transform.rotation;
+      pose.pose = msg_conversions::ros_transform_to_ros_pose(tf.transform);
     }
     catch (tf2::TransformException &ex) {
       NODELET_WARN_STREAM("Transform failed" << ex.what());
@@ -1179,6 +1177,12 @@ class ChoreographerNodelet : public ff_util::FreeFlyerNodelet {
       path.poses.push_back(ps);
     }
     pub_segment_.publish(path);
+
+    // Initialize timers
+    tolerance_pos_timer_ = ros::Time::now();
+    tolerance_att_timer_ = ros::Time::now();
+    tolerance_vel_timer_ = ros::Time::now();
+    tolerance_omega_timer_ = ros::Time::now();
     // Success!
     return true;
   }
@@ -1192,7 +1196,7 @@ class ChoreographerNodelet : public ff_util::FreeFlyerNodelet {
       if (flight_mode_.tolerance_pos > 0.0 &&
           feedback->error_position > flight_mode_.tolerance_pos) {
         // If tolerance is present more that the allowable time
-        if ((ros::Time::now() - tolerance_pos_timer).toSec() > tolerance_max_time_) {
+        if ((ros::Time::now() - tolerance_pos_timer_).toSec() > tolerance_max_time_) {
           NODELET_DEBUG_STREAM("Position tolerance violated");
           NODELET_DEBUG_STREAM("- Value: " << feedback->error_position
                                           << ", Thresh: "
@@ -1202,13 +1206,13 @@ class ChoreographerNodelet : public ff_util::FreeFlyerNodelet {
         }
       } else {
         // If there is no tolerance violation, reset time
-        tolerance_pos_timer = ros::Time::now();
+        tolerance_pos_timer_ = ros::Time::now();
       }
       // Check attitude tolerance
       if (flight_mode_.tolerance_att > 0.0 &&
           feedback->error_attitude > flight_mode_.tolerance_att) {
         // If tolerance is present more that the allowable time
-        if ((ros::Time::now() - tolerance_att_timer).toSec() > tolerance_max_time_) {
+        if ((ros::Time::now() - tolerance_att_timer_).toSec() > tolerance_max_time_) {
           NODELET_DEBUG_STREAM("Attitude tolerance violated");
           NODELET_DEBUG_STREAM("- Value: " << feedback->error_attitude
                                           << ", Thresh: "
@@ -1218,13 +1222,13 @@ class ChoreographerNodelet : public ff_util::FreeFlyerNodelet {
         }
       } else {
         // If there is no tolerance violation, reset time
-        tolerance_att_timer = ros::Time::now();
+        tolerance_att_timer_ = ros::Time::now();
       }
       // Check velocity tolerance
       if (flight_mode_.tolerance_vel > 0.0 &&
           feedback->error_velocity > flight_mode_.tolerance_vel) {
         // If tolerance is present more that the allowable time
-        if ((ros::Time::now() - tolerance_vel_timer).toSec() > tolerance_max_time_) {
+        if ((ros::Time::now() - tolerance_vel_timer_).toSec() > tolerance_max_time_) {
           NODELET_DEBUG_STREAM("Velocity tolerance violated");
           NODELET_DEBUG_STREAM("- Value: " << feedback->error_velocity
                                           << ", Thresh: "
@@ -1234,13 +1238,13 @@ class ChoreographerNodelet : public ff_util::FreeFlyerNodelet {
         }
       } else {
         // If there is no tolerance violation, reset time
-        tolerance_vel_timer = ros::Time::now();
+        tolerance_vel_timer_ = ros::Time::now();
       }
       // Check angular velocity tolerance
       if (flight_mode_.tolerance_omega > 0.0 &&
           feedback->error_omega > flight_mode_.tolerance_omega) {
         // If tolerance is present more that the allowable time
-        if ((ros::Time::now() - tolerance_omega_timer).toSec() > tolerance_max_time_) {
+        if ((ros::Time::now() - tolerance_omega_timer_).toSec() > tolerance_max_time_) {
           NODELET_DEBUG_STREAM("Angular velocity tolerance violated");
           NODELET_DEBUG_STREAM("- Value: " << feedback->error_omega
                                           << ", Thresh: "
@@ -1250,7 +1254,7 @@ class ChoreographerNodelet : public ff_util::FreeFlyerNodelet {
         }
       } else {
         // If there is no tolerance violation, reset time
-        tolerance_omega_timer = ros::Time::now();
+        tolerance_omega_timer_ = ros::Time::now();
       }
     // Send progress in stopping/idling/replanning
     case STATE::STOPPING:
@@ -1418,8 +1422,8 @@ class ChoreographerNodelet : public ff_util::FreeFlyerNodelet {
   double tolerance_max_time_;
   // Position error
   double pos_error_;
-  ros::Time tolerance_pos_timer, tolerance_att_timer,
-                tolerance_vel_timer, tolerance_omega_timer;
+  ros::Time tolerance_pos_timer_, tolerance_att_timer_,
+                tolerance_vel_timer_, tolerance_omega_timer_;
   // Cached number of replan attempts
   int replan_attempts_;
 };

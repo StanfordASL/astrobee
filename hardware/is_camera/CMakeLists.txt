@@ -28,6 +28,7 @@ find_package(catkin2 REQUIRED COMPONENTS
   nodelet
   ff_util
   config_reader
+  camera
 )
 
 # Need to find libv4l2
@@ -40,7 +41,7 @@ find_package_handle_standard_args(V4L2 DEFAULT_MSG
 
 
 # Find OpenCV
-SET(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/../../cmake")
+LIST(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/../../cmake")
 find_package(OpenCV331 REQUIRED)
 
 catkin_package(
@@ -51,6 +52,7 @@ catkin_package(
     nodelet
     ff_util
     config_reader
+    camera
   )
 
 ###########

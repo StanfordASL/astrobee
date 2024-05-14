@@ -38,7 +38,7 @@
 #include <ff_msgs/MotionAction.h>
 #include <ff_msgs/PerchState.h>
 #include <ff_util/ff_flight.h>
-#include <ff_util/ff_names.h>
+#include <ff_common/ff_names.h>
 
 // Gflags
 DEFINE_bool(dock, false, "Send dock command");
@@ -55,6 +55,7 @@ DEFINE_bool(undock, false, "Send undock command");
 DEFINE_bool(relative, false, "Position is relative to current point");
 DEFINE_bool(reset_bias, false, "Send initialize bias command");
 DEFINE_bool(reset_ekf, false, "Send reset ekf command");
+DEFINE_bool(remote, false, "Whether target command is remote robot");
 
 DEFINE_double(accel, -1.0, "Desired acceleration");
 DEFINE_double(alpha, -1.0, "Desired angular acceleration");
@@ -65,6 +66,7 @@ DEFINE_double(collision_distance, -1.0, "Desired collision distance");
 DEFINE_int32(berth, 1, "Berth to dock in");
 
 DEFINE_string(att, "", "Desired attitude in angle-axis format 'angle X Y Z'");
+DEFINE_string(set_check_zones, "", "Enable keepout zone checking");
 DEFINE_string(set_face_forward, "", "Plan in face-forward mode, on or off");
 DEFINE_string(mode, "", "Flight mode");
 DEFINE_string(ns, "", "Robot namespace");
@@ -72,8 +74,8 @@ DEFINE_string(set_planner, "", "Path planning algorithm");
 DEFINE_string(pos, "", "Desired position in cartesian format 'X Y Z'");
 
 bool get_face_forward, get_op_limits, get_planner, get_state, get_faults;
-bool reset_bias, reset_ekf, set_face_forward, set_planner, set_op_limits;
-bool send_mob_command, mob_command_finished;
+bool reset_bias, reset_ekf, set_check_zones, set_face_forward, set_planner;
+bool set_op_limits, send_mob_command, mob_command_finished;
 
 geometry_msgs::TransformStamped tfs;
 
@@ -83,8 +85,9 @@ uint8_t modeMove = 0, modeGetInfo = 0;
 
 bool Finished() {
   if (!get_face_forward && !get_op_limits && !get_planner && !get_state &&
-      !get_faults && !reset_bias && !reset_ekf && !set_face_forward &&
-      !set_planner && !set_op_limits && mob_command_finished) {
+      !get_faults && !reset_bias && !reset_ekf && !set_check_zones &&
+      !set_face_forward && !set_planner && !set_op_limits &&
+      mob_command_finished) {
     return true;
   }
 
@@ -396,6 +399,30 @@ bool SendResetEkf() {
   return true;
 }
 
+bool SendSetCheckZones() {
+  ff_msgs::CommandStamped cmd;
+  cmd.header.stamp = ros::Time::now();
+  cmd.subsys_name = "Astrobee";
+
+  cmd.cmd_name = ff_msgs::CommandConstants::CMD_NAME_SET_CHECK_ZONES;
+  cmd.cmd_id = ff_msgs::CommandConstants::CMD_NAME_SET_CHECK_ZONES;
+
+  // Set check zones has one argument
+  cmd.args.resize(1);
+  cmd.args[0].data_type = ff_msgs::CommandArg::DATA_TYPE_BOOL;
+  if (FLAGS_set_check_zones == "on") {
+    cmd.args[0].b = true;
+  } else {
+    cmd.args[0].b = false;
+  }
+
+  cmd_pub.publish(cmd);
+  // Change to false so we don't send the command again
+  set_check_zones = false;
+  std::cout << "\nSetting check zones.\n";
+  return true;
+}
+
 bool SendSetFaceForward() {
   ff_msgs::CommandStamped cmd;
   cmd.header.stamp = ros::Time::now();
@@ -507,7 +534,11 @@ bool SendNextCommand() {
     return SendResetEkf();
   }
 
-  // Sending the mobility setting is the next thing we should do
+  // Sending the mobility settings is the next thing we should do
+  if (set_check_zones) {
+    return SendSetCheckZones();
+  }
+
   if (set_face_forward) {
     return SendSetFaceForward();
   }
@@ -556,6 +587,7 @@ void AckCallback(ff_msgs::AckStampedConstPtr const& ack) {
     std::cout << "\n" << ack->cmd_id << " command failed! " << ack->message;
     std::cout << "\n";
     ros::shutdown();
+    exit(1);
     return;
   }
   if (Finished()) {
@@ -609,6 +641,7 @@ int main(int argc, char** argv) {
   get_faults =  FLAGS_get_faults;
   reset_bias = FLAGS_reset_bias;
   reset_ekf = FLAGS_reset_ekf;
+  set_check_zones = false;
   set_face_forward = false;
   set_planner = false;
   set_op_limits = FLAGS_set_op_limits;
@@ -627,6 +660,7 @@ int main(int argc, char** argv) {
   if (FLAGS_get_faults) modeGetInfo++;
   if (FLAGS_reset_bias) modeGetInfo++;
   if (FLAGS_reset_ekf) modeGetInfo++;
+  if (FLAGS_set_check_zones != "") modeGetInfo++;
   if (FLAGS_set_planner != "") modeGetInfo++;
   if (FLAGS_set_face_forward != "") modeGetInfo++;
   if (FLAGS_set_op_limits) modeGetInfo++;
@@ -664,6 +698,16 @@ int main(int argc, char** argv) {
     }
   }
 
+  // Check to see if the user specified check zones
+  if (FLAGS_set_check_zones != "") {
+    if (FLAGS_set_check_zones != "on" &&
+      FLAGS_set_check_zones != "off") {
+      std::cout << "The check zones flag must be on or off.\n\n";
+      return 1;
+    }
+    set_check_zones = true;
+  }
+
   // Check to see if the user specified face forward mode
   if (FLAGS_set_face_forward != "") {
     if (FLAGS_set_face_forward != "on" && FLAGS_set_face_forward != "off") {
@@ -686,7 +730,7 @@ int main(int argc, char** argv) {
   tf2_ros::TransformListener tf_listener(tf_buffer);
 
   // Initialize publishers
-  cmd_pub = nh.advertise<ff_msgs::CommandStamped>(TOPIC_COMMAND, 10, true);
+  cmd_pub = nh.advertise<ff_msgs::CommandStamped>(TOPIC_COMMAND, 10);
 
   // Initialize subscribers
   ros::Subscriber ack_sub, agent_state_sub, fault_state_sub, dock_sub, move_sub;
@@ -694,7 +738,7 @@ int main(int argc, char** argv) {
 
   // Hacky time out
   int count = 0;
-  while (ack_sub.getNumPublishers() == 0) {
+  while (ack_sub.getNumPublishers() == 0 && !FLAGS_remote) {
     ros::Duration(0.2).sleep();
     // Only wait 2 seconds
     if (count == 9) {
@@ -706,7 +750,7 @@ int main(int argc, char** argv) {
   }
 
   // If the user wants to get pose or move, get the current pose of the robot
-  if (FLAGS_get_pose || FLAGS_move) {
+  if (FLAGS_get_pose || (FLAGS_move && !FLAGS_remote)) {
     std::string ns = FLAGS_ns;
     // Wait for transform listener to start up
     ros::Duration(1.0).sleep();
@@ -760,7 +804,7 @@ int main(int argc, char** argv) {
     dock_sub = nh.subscribe(topic_name, 10, &DockFeedbackCallback);
     // Hacky time out
     int dock_count = 0;
-    while (dock_sub.getNumPublishers() == 0) {
+    while (dock_sub.getNumPublishers() == 0 && !FLAGS_remote) {
       ros::Duration(0.2).sleep();
       // Only wait 2 seconds
       if (dock_count == 9) {
@@ -770,6 +814,16 @@ int main(int argc, char** argv) {
       }
       dock_count++;
     }
+  }
+
+  // If remote, spin for seconds
+  if (FLAGS_remote) {
+    ros::Rate loop_rate(10);
+    ros::Time start_time = ros::Time::now();
+
+    // Spin for 3 seconds
+    while (ros::Time::now() - start_time < ros::Duration(3.0))
+        loop_rate.sleep();
   }
 
   if (!SendNextCommand()) {

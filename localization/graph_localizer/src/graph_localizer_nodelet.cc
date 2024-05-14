@@ -18,7 +18,7 @@
 
 #include <ff_msgs/GraphState.h>
 #include <ff_msgs/LocalizationGraph.h>
-#include <ff_util/ff_names.h>
+#include <ff_common/ff_names.h>
 #include <graph_localizer/graph_localizer_nodelet.h>
 #include <graph_localizer/parameter_reader.h>
 #include <graph_localizer/utilities.h>
@@ -258,7 +258,7 @@ void GraphLocalizerNodelet::PublishSparseMappingPose() const {
 void GraphLocalizerNodelet::PublishARTagPose() const {
   const auto latest_ar_tag_pose_msg = graph_localizer_wrapper_.LatestARTagPoseMsg();
   if (!latest_ar_tag_pose_msg) {
-    LogWarning("PublishARTagPose: Failed to get latest ar tag pose msg.");
+    LogDebug("PublishARTagPose: Failed to get latest ar tag pose msg.");
     return;
   }
   ar_tag_pose_pub_.publish(*latest_ar_tag_pose_msg);

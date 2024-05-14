@@ -17,7 +17,7 @@
  */
 
 #include <ff_common/utils.h>
-#include <ff_util/ff_names.h>
+#include <ff_common/ff_names.h>
 #include <localization_analysis/graph_bag.h>
 #include <localization_analysis/parameter_reader.h>
 #include <localization_analysis/utilities.h>
@@ -128,6 +128,8 @@ void GraphBag::Run() {
     const auto vl_msg = live_measurement_simulator_->GetVLMessage(current_time);
     if (vl_msg) {
       graph_localizer_simulator_->BufferVLVisualLandmarksMsg(*vl_msg);
+      SaveMsg(*vl_msg, TOPIC_LOCALIZATION_ML_FEATURES,
+                results_bag_);
       if (gl::ValidVLMsg(*vl_msg, params_.sparse_mapping_min_num_landmarks)) {
         const gtsam::Pose3 sparse_mapping_global_T_body =
           lc::PoseFromMsgWithExtrinsics(vl_msg->pose, params_.body_T_nav_cam.inverse());

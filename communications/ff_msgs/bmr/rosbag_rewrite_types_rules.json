@@ -3,6 +3,11 @@
     ],
     "fix_message_definition_topic_patterns": [
         "/gs/*",
-        "/hw/cam_sci/compressed"
+        "/command",
+        "/hw/cam_sci/compressed",
+        "/hw/cam_sci_info",
+        "/mgt/disk_monitor/state",
+        "/mgt/cpu_monitor/state",
+        "/signals"
     ]
 }

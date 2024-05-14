@@ -39,7 +39,7 @@ find_package(OpenMVG QUIET REQUIRED)
 find_package(Eigen3 REQUIRED)
 
 # Find OpenCV
-SET(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/../../cmake")
+LIST(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/../../cmake")
 find_package(OpenCV331 REQUIRED)
 
 catkin_package(
@@ -102,7 +102,7 @@ target_link_libraries(interest_points_test_bag
 add_executable(merge_bags tools/merge_bags.cc)
 add_dependencies(merge_bags ${catkin_EXPORTED_TARGETS})
 target_link_libraries(merge_bags
-  localization_node gflags glog ${catkin_LIBRARIES})
+  gflags glog ${catkin_LIBRARIES})
 
 #############
 ## Install ##
