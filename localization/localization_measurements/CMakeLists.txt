@@ -29,6 +29,7 @@ find_package(catkin2 REQUIRED COMPONENTS
   localization_common
   msg_conversions
   point_cloud_common
+  vision_common
 )
 
 find_package(PCL REQUIRED COMPONENTS common features filters octree search)
@@ -36,8 +37,7 @@ find_package(PCL REQUIRED COMPONENTS common features filters octree search)
 find_package(pcl_conversions REQUIRED)
 
 # Find OpenCV
-LIST(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/../../cmake")
-find_package(OpenCV331 REQUIRED)
+find_package(OpenCV 4.0 REQUIRED)
 
 # System dependencies are found with CMake's conventions
 find_package(Eigen3 REQUIRED)
@@ -45,7 +45,7 @@ find_package(Eigen3 REQUIRED)
 catkin_package(
   LIBRARIES ${PROJECT_NAME} ${OpenCV_LIBRARIES} ${PCL_LIBRARIES} ${pcl_conversions_INCLUDE_DIRS}  
   INCLUDE_DIRS include ${PCL_INCLUDE_DIRS} 
-  CATKIN_DEPENDS config_reader cv_bridge ff_msgs localization_common msg_conversions point_cloud_common 
+  CATKIN_DEPENDS config_reader cv_bridge ff_msgs localization_common msg_conversions point_cloud_common vision_common 
 )
 
 ###########

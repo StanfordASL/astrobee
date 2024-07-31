@@ -43,7 +43,7 @@ find_package(dbow2 REQUIRED)
 
 # Find OpenCV
 LIST(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/../../cmake")
-find_package(OpenCV331 REQUIRED)
+find_package(OpenCV4WithXFeatures REQUIRED)
 
 
 catkin_package(
@@ -79,6 +79,7 @@ add_library(sparse_mapping
   src/sparse_map.cc
   src/sparse_mapping.cc
   src/tensor.cc
+  src/visualization_utilities.cc
   src/vocab_tree.cc
   ${PROTO_SRCS}
 )
