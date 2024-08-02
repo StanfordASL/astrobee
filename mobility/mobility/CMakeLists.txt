@@ -27,6 +27,7 @@ find_package(catkin2 REQUIRED COMPONENTS
   mapper
   planner_trapezoidal
   planner_qp
+  planner_scp_gusto
   ff_msgs
   ff_util
   jsonloader
@@ -37,6 +38,7 @@ catkin_package(
     mapper
     planner_trapezoidal
     planner_qp
+    planner_scp_gusto
     ff_msgs
     ff_util
     jsonloader

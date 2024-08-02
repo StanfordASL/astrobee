@@ -161,7 +161,8 @@ const Fields enableHolonomicFields {
 const Fields plannerFields {
   new EnumField("planner", {
     "trapezoidal",
-    "qp"
+    "qp",
+    "scp_gusto"
   })
 };
 

@@ -341,8 +341,8 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  if (FLAGS_planner != "trapezoidal" && FLAGS_planner != "qp") {
-    std::cout << "The planner must be either trapezoidal or qp." << std::endl;
+  if (FLAGS_planner != "trapezoidal" && FLAGS_planner != "qp" && FLAGS_planner != "scp_gusto") {
+    std::cout << "The planner must be either trapezoidal or qp or scp_gusto." << std::endl;
     return 1;
   }
   if (FLAGS_move && FLAGS_pos.empty() && FLAGS_att.empty()) {

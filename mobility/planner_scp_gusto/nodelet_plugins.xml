@@ -1,0 +1,5 @@
+<library path="lib/libplanner_scp_gusto">
+  <class name="planner_scp_gusto/PlannerSCPGustoNodelet" type="planner_scp_gusto::PlannerSCPGustoNodelet" base_class_type="nodelet::Nodelet">
+    <description>Nodelet for mobility::planner::scp_gusto</description>
+  </class>
+</library>
