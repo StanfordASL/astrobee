@@ -34,6 +34,9 @@ find_package(catkin2 REQUIRED COMPONENTS
   mapper
 )
 
+# OSQP-eigen
+find_package(OsqpEigen REQUIRED)
+
 ## System dependencies are found with CMake's conventions
 find_package(PCL REQUIRED COMPONENTS common)
 
@@ -62,16 +65,22 @@ include_directories(
   include
   ${catkin_INCLUDE_DIRS}
   ${PCL_INCLUDE_DIRS}
+  /usr/local/include/osqp
+  /usr/local/include/OsqpEigen
+  # ${OsqpEigen_INCLUDE_DIRS}
+  # ${osqp_INCLUDE_DIRS}
 )
 
 # Declare C++ libraries
 add_library(planner_scp_gusto
   src/planner_scp_gusto.cc
   src/planner_scp_gusto_nodelet.cc
-  # src/optim.cc
+  src/optim.cc
 )
 add_dependencies(planner_scp_gusto ${catkin_EXPORTED_TARGETS})
 target_link_libraries(planner_scp_gusto ${catkin_LIBRARIES})
+
+target_link_libraries(planner_scp_gusto OsqpEigen::OsqpEigen)
 
 #############
 ## Install ##

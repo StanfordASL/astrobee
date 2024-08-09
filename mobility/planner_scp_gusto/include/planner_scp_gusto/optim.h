@@ -19,15 +19,15 @@
 #ifndef PLANNER_SCP_GUSTO_OPTIM_H_
 #define PLANNER_SCP_GUSTO_OPTIM_H_
 
-// #include <scp/types.h>
-// #include <scp/bullet_collision_checker.h>
-
-// #include <Eigen/Core>
-// #include <Eigen/Geometry>
+#include <Eigen/Core>
+#include <Eigen/Geometry>
 
 #include <vector>
 #include <string>
 #include <cmath>
+
+#include "planner_scp_gusto/types.h"
+#include "planner_scp_gusto/bullet_collision_checker.h"
 
 #include "OsqpEigen/OsqpEigen.h"
 
