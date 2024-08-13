@@ -2833,11 +2833,13 @@ bool Executive::SetPlanner(ff_msgs::CommandStampedPtr const& cmd) {
     // Check that the planner string is valid
     if (cmd->args[0].s != CommandConstants::PARAM_NAME_PLANNER_TYPE_TRAPEZOIDAL
         && cmd->args[0].s !=
-                CommandConstants::PARAM_NAME_PLANNER_TYPE_QUADRATIC_PROGRAM) {
-      NODELET_ERROR("Planner must be either Trapezoidal or QuadraticProgram");
+                CommandConstants::PARAM_NAME_PLANNER_TYPE_QUADRATIC_PROGRAM
+        && cmd->args[0].s !=
+                "scp_gusto") {
+      NODELET_ERROR("Planner must be either Trapezoidal or QuadraticProgram or SCP_GuSTO");
       state_->AckCmd(cmd->cmd_id,
                      ff_msgs::AckCompletedStatus::BAD_SYNTAX,
-                     "Planner must be either Trapezoidal or QuadraticProgram");
+                     "Planner must be either Trapezoidal or QuadraticProgram or SCP_GuSTO");
       return false;
     }
 

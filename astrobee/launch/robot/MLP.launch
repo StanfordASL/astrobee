@@ -178,6 +178,16 @@
     <arg name="default" value="true" />
   </include>
   <include file="$(find ff_util)/launch/ff_nodelet.launch">
+    <arg name="class" value="planner_scp_gusto/PlannerSCPGustoNodelet" />
+    <arg name="name" value="planner_scp_gusto" />
+    <arg name="manager" value="mlp_mobility" />
+    <arg name="spurn" value="$(arg spurn)" />
+    <arg name="nodes" value="$(arg nodes)" />
+    <arg name="extra" value="$(arg extra)" />
+    <arg name="debug" value="$(arg debug)" />
+    <arg name="default" value="true" />
+  </include>
+  <include file="$(find ff_util)/launch/ff_nodelet.launch">
     <arg name="class" value="mobility/FrameStore" />
     <arg name="name" value="framestore" />
     <arg name="manager" value="mlp_mobility" />
