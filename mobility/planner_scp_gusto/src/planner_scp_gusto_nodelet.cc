@@ -35,6 +35,7 @@
 // For the scp gusto planner implementation
 #include <planner_scp_gusto/planner_scp_gusto.h>
 #include <planner_scp_gusto/types.h>
+#include <planner_scp_gusto/optim.h>
 
 // C++ includes
 #include <vector>
@@ -53,6 +54,24 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
   PlannerSCPGustoNodelet() :
     planner::PlannerImplementation("scp_gusto", "SCP Gusto path planner") {}
   ~PlannerSCPGustoNodelet() {}
+
+ private:
+  // planner configuration params
+  bool faceforward_;      // Face-forward trajectory?
+  bool check_obstacles_;  // Perform obstacle checking
+  float desired_vel_;     // Soft limit on velocity
+  float desired_accel_;   // Soft limit on accel
+  float desired_omega_;   // Soft limit on omega
+  float desired_alpha_;   // Soft limit on alpha
+  float control_rate_;    // Control frequency
+  double max_time_;       // Max generation time
+  double epsilon_;
+  bool use_2d;            // true for granite table
+  std::string flight_mode_;
+  ros::NodeHandle *nh_;
+
+  uint N;
+  scp::TOP* top;
 
  protected:
   bool InitializePlanner(ros::NodeHandle *nh) {
@@ -135,12 +154,7 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
  protected:
   ff_util::ConfigServer cfg_;
   ros::Timer timer_d_;
-  double desired_vel_;
-  double desired_omega_;
-  double desired_accel_;
-  double desired_alpha_;
   double min_control_period_;
-  double epsilon_;
 };
 
 PLUGINLIB_EXPORT_CLASS(planner_scp_gusto::PlannerSCPGustoNodelet,
