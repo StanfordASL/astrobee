@@ -34,6 +34,7 @@
 
 // For the scp gusto planner implementation
 #include <planner_scp_gusto/planner_scp_gusto.h>
+#include <planner_scp_gusto/types.h>
 
 // C++ includes
 #include <vector>
@@ -85,38 +86,45 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
   void PlanCallback(ff_msgs::PlanGoal const& goal) {
     // Do some basic error checks
     ff_msgs::PlanResult plan_result;
-    plan_result.response = RESPONSE::SUCCESS;
-    // if (goal.states.size() < 2)
-    //   plan_result.response = RESPONSE::NOT_ENOUGH_STATES;
-    // if (goal.check_obstacles)
-    //   plan_result.response = RESPONSE::OBSTACLES_NOT_SUPPORTED;
-    // if (plan_result.response < 0)
-    //   return PlanResult(plan_result);
-    // // Save the information
-    // desired_vel_   = goal.desired_vel;
-    // desired_omega_ = goal.desired_omega;
-    // desired_accel_ = goal.desired_accel;
-    // desired_alpha_ = goal.desired_alpha;
-    // min_control_period_ = 1.0 / goal.desired_rate;
-    // // Setup header and keep track of time as we generate trapezoidal ramps
-    // plan_result.segment.clear();
-    // // Generate the trapezoidal ramp
-    // ros::Time offset = goal.states.front().header.stamp;
-    // for (size_t i = 1; i < goal.states.size(); i++) {
-    //   // Get the requested duration and offset
-    //   double dt =
-    //     (goal.states[i].header.stamp - goal.states[i-1].header.stamp).toSec();
-    //   // Extract affine transformations for the two poses
-    //   Eigen::Affine3d tf_1 =
-    //     msg_conversions::ros_pose_to_eigen_transform(goal.states[i-1].pose);
-    //   Eigen::Affine3d tf_4 =
-    //     msg_conversions::ros_pose_to_eigen_transform(goal.states[i].pose);
-    //   Eigen::Vector3d delta = tf_4.translation() - tf_1.translation();
+    const std::vector<geometry_msgs::PoseStamped> &states = goal.states;
+    ROS_ERROR_STREAM("SB Got states from plancallback");
 
-    // }
-    // // Special case: we might already be there
-    // if (plan_result.segment.size() < 2)
-    //   plan_result.response = RESPONSE::ALREADY_THERE;
+    scp::Vec13 x0, xg;
+    x0.segment(0, 3) << states.front().pose.position.x, states.front().pose.position.y,
+      states.front().pose.position.z;
+    x0.segment(3, 3) << 0, 0, 0;
+    x0.segment(6, 4) << states.front().pose.orientation.x, states.front().pose.orientation.y,
+      states.front().pose.orientation.z, states.front().pose.orientation.w;
+    x0.segment(10, 3) << 0, 0, 0;
+
+    xg.segment(0, 3) << states.back().pose.position.x, states.back().pose.position.y,
+      states.back().pose.position.z;
+    xg.segment(3, 3) << 0, 0, 0;
+    xg.segment(6, 4) << states.back().pose.orientation.x, states.back().pose.orientation.y,
+      states.back().pose.orientation.z, states.back().pose.orientation.w;
+    xg.segment(10, 3) << 0, 0, 0;
+
+    // Temporarily make a fake setpoint to stay in same position and add to plan_result
+    geometry_msgs::PoseStamped state = states.front();
+    ff_util::Setpoint sp;
+    sp.when = state.header.stamp;
+    sp.pose.position = state.pose.position;
+    sp.pose.orientation = state.pose.orientation;
+    geometry_msgs::Vector3 zeros;
+    zeros.x = 0.0; zeros.y = 0.0; zeros.z = 0.0;
+    sp.twist.linear = zeros;
+    sp.twist.angular = zeros;
+    sp.accel.linear = zeros;
+    sp.accel.angular = zeros;
+    plan_result.segment.push_back(sp);
+
+    ROS_WARN_STREAM("The segment added was "<< state.pose.position.x);
+
+    plan_result.response = RESPONSE::SUCCESS;
+
+    // Special case: we might already be there
+    if (plan_result.segment.size() < 2)
+      plan_result.response = RESPONSE::ALREADY_THERE;
     // Callback with the result
     return PlanResult(plan_result);
   }

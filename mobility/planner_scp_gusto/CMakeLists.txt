@@ -75,7 +75,7 @@ include_directories(
 add_library(planner_scp_gusto
   src/planner_scp_gusto.cc
   src/planner_scp_gusto_nodelet.cc
-  src/optim.cc
+  # src/optim.cc
 )
 add_dependencies(planner_scp_gusto ${catkin_EXPORTED_TARGETS})
 target_link_libraries(planner_scp_gusto ${catkin_LIBRARIES})
