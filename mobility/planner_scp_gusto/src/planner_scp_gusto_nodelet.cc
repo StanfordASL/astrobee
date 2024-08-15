@@ -360,9 +360,9 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
     top->desired_alpha_   = desired_alpha_;
     top->max_time_        = max_time_;
     top->control_rate_    = control_rate_;
-    top->UpdateStateCons();
-    top->UpdateVelCons();
-    top->UpdateAngVelCons();
+    // top->UpdateStateCons();
+    // top->UpdateVelCons();
+    // top->UpdateAngVelCons();
 
     // check validity of params
     if (control_rate_ == 0.0 || desired_vel_ == 0.0 || desired_accel_ == 0.0 ||
