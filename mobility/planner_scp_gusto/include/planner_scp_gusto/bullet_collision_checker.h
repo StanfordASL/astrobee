@@ -29,14 +29,14 @@
 
 #include "planner_scp_gusto/types.h"
 
-#include "bullet3/src/btBulletDynamicsCommon.h"
-#include "bullet3/src/btBulletCollisionCommon.h"
-#include "bullet3/src/BulletCollision/CollisionShapes/btConvex2dShape.h"
-#include "bullet3/src/BulletCollision/NarrowPhaseCollision/btGjkPairDetector.h"
-#include "bullet3/src/BulletCollision/NarrowPhaseCollision/btGjkEpaPenetrationDepthSolver.h"
-#include "bullet3/src/BulletCollision/NarrowPhaseCollision/btPointCollector.h"
-#include "bullet3/src/BulletDynamics/Featherstone/btMultiBody.h"
-#include "bullet3/src/LinearMath/btConvexHull.h"
+#include "bullet/btBulletDynamicsCommon.h"
+#include "bullet/btBulletCollisionCommon.h"
+#include "bullet/BulletCollision/CollisionShapes/btConvex2dShape.h"
+#include "bullet/BulletCollision/NarrowPhaseCollision/btGjkPairDetector.h"
+#include "bullet/BulletCollision/NarrowPhaseCollision/btGjkEpaPenetrationDepthSolver.h"
+#include "bullet/BulletCollision/NarrowPhaseCollision/btPointCollector.h"
+#include "bullet/BulletDynamics/Featherstone/btMultiBody.h"
+#include "bullet/LinearMath/btConvexHull.h"
 
 namespace collision_checker {
 
