@@ -38,7 +38,7 @@
 #include "bullet/BulletDynamics/Featherstone/btMultiBody.h"
 #include "bullet/LinearMath/btConvexHull.h"
 
-namespace collision_checker {
+namespace scp {
 
 struct SignedDistanceResult {
   scp::decimal_t sd;
@@ -98,5 +98,5 @@ class BulletCollisionChecker {
         const btCollisionShape* cs2, const btTransform& tr2,
         btScalar* result, btScalar max_d2);
 };
-}  // namespace collision_checker
+}  // namespace scp
 #endif  // PLANNER_SCP_GUSTO_BULLET_COLLISION_CHECKER_H_

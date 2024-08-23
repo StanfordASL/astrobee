@@ -27,7 +27,7 @@
 #include <cmath>
 
 #include "planner_scp_gusto/types.h"
-// #include "planner_scp_gusto/bullet_collision_checker.h"
+#include "planner_scp_gusto/bullet_collision_checker.h"
 
 #include "OsqpEigen/OsqpEigen.h"
 
@@ -73,7 +73,7 @@ class TOP {
   bool lin_vel_strict;
   bool ang_vel_strict;
 
-  // collision_checker::BulletCollisionChecker cc;
+  scp::BulletCollisionChecker cc;
 
   OsqpEigen::Solver* solver;
   decimal_t abs_tol_;

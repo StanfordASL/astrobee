@@ -73,6 +73,7 @@ include_directories(
   ${PCL_INCLUDE_DIRS}
   ${BULLET_INCLUDE_DIRS}
   ${OsqpEigen_ROOT_DIR}/include/OsqpEigen
+  # /usr/local/include/osqp
 )
 
 # Declare C++ libraries
@@ -80,6 +81,7 @@ add_library(planner_scp_gusto
   src/planner_scp_gusto.cc
   src/planner_scp_gusto_nodelet.cc
   src/optim.cc
+  src/bullet_collision_checker.cpp
 )
 
 add_dependencies(planner_scp_gusto ${catkin_EXPORTED_TARGETS})
