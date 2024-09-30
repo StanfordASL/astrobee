@@ -43,8 +43,8 @@ TOP::TOP(decimal_t Tf_, int N_)
   enforce_init_cond = true;
   enforce_final_cond = true;
   enforce_lin_dynamics = true;
-  enforce_rot_dynamics = false;
-  enforce_force_norm = false;
+  enforce_rot_dynamics = true;
+  enforce_force_norm = true;
   enforce_moment_norm = false;
   enforce_state_LB = false;
   enforce_state_UB = false;
@@ -82,7 +82,8 @@ TOP::TOP(decimal_t Tf_, int N_)
 
   // TODO(somrita): freeze these parameters once debugging is complete
   desired_vel_ = 0.2000;
-  desired_accel_ = 0.0175;
+  // desired_accel_ = 0.0175;
+  desired_accel_ = 1e2;
   // desired_accel_ = 1e-2;
   // desired_accel_ = 0.0;
   // desired_accel_ = 0.1;
@@ -92,8 +93,8 @@ TOP::TOP(decimal_t Tf_, int N_)
   // desired_alpha_ = 0.600;
 
   // TODO(acauligi): process keep-in+keep-out data
-  keep_in_zones_ = new std::vector<Eigen::AlignedBox3d>(0);
-  keep_out_zones_ = new std::vector<Eigen::AlignedBox3d>(0);
+  keep_in_zones_.clear();
+  keep_out_zones_.clear();
 
   // TODO(acauligi): determine what pos_min_ and pos_max_ should be correctly
   for (size_t ii = 0; ii < 3; ii++) {
@@ -209,7 +210,7 @@ void TOP::UpdateProblemDimension(size_t N_) {
   Xprev.resize(N);
   Uprev.resize(N-1);
 
-  size_t n_obs = keep_out_zones_->size();
+  size_t n_obs = keep_out_zones_.size();
   support_vectors.resize(n_obs*(N-1));
   obs_ub.resize(n_obs*(N-1));
   obs_clearance = 0.10;   // 10cm clearance from obstacles
@@ -243,7 +244,7 @@ void TOP::UpdateProblemDimension(size_t N_) {
   SetSimpleCosts();
 
   // Set up solver
-  abs_tol_ = 1e-5;  // default 1e-03
+  abs_tol_ = 1e-3;  // default 1e-03
   rel_tol_ = 1e-3;  // default 1e-03
   primal_tol_ = 1e-8;  // default 1e-04
   dual_tol_ = 1e-8;  // default 1e-04
@@ -424,7 +425,7 @@ void TOP::SetSimpleConstraints() {
       double eps = 0.0;
       size_t F_max_ = mass * desired_accel_ - eps;
       // penalize_total_force ?  sum(s_ik)-zk <= F_max_ : sum(s_ik) <= F_max
-      if (penalize_total_moment) {  // sum(s_ik)-zk <= F_max
+      if (penalize_total_force) {  // sum(s_ik)-zk <= F_max
         size_t z_slack_var_idx = state_dim*N+control_dim*(N-1)+ii*num_force_norm_slack_vars_per_iter+4;
         for (size_t jj = 0; jj < control_dim_lin; jj++) {
           size_t s_slack_var_idx = state_dim*N+control_dim*(N-1)+ii*num_force_norm_slack_vars_per_iter+jj;
@@ -929,6 +930,7 @@ void TOP::UpdateRotationalDynamics() {
 bool TOP::Solve() {
   solved_ = false;
   InitTrajStraightline();
+  bool add_custom_keep_out_zone = true;
 
   std::cout << "SCP::InitTrajStraightline complete" << std::endl;
   std::cout << "SCP:: start of init traj is " << Xprev[0].transpose() << std::endl;
@@ -937,6 +939,21 @@ bool TOP::Solve() {
 
   std::cout << "TOP:: mass: " << mass << std::endl;
   std::cout << "TOP:: inertia: " << J << std::endl;
+
+  std::cout << "TOP:: desired accel: " << desired_accel_ << std::endl;
+
+  std::cout << "TOP:: Keep in zones: " << std::endl;
+  for (size_t i = 0; i < keep_in_zones_.size(); ++i) {
+    std::cout << "Zone " << i << std::endl;
+    std::cout << "min: " << keep_in_zones_[i].min().transpose() << std::endl;
+    std::cout << "max: " << keep_in_zones_[i].max().transpose() << std::endl;
+  }
+  std::cout << "TOP:: Keep out zones: " << std::endl;
+  for (size_t i = 0; i < keep_out_zones_.size(); ++i) {
+    std::cout << "Zone " << i << std::endl;
+    std::cout << "min: " << keep_out_zones_[i].min().transpose() << std::endl;
+    std::cout << "max: " << keep_out_zones_[i].max().transpose() << std::endl;
+  }
 
 
   // // Print init-traj states

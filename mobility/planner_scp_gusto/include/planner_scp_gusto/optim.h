@@ -135,8 +135,8 @@ class TOP {
   Mat6 Ak_di;     // Ak for double integrator
   Mat6x3 Bk_di;   // Bk for double integrator
 
-  std::vector<Eigen::AlignedBox3d>* keep_in_zones_;
-  std::vector<Eigen::AlignedBox3d>* keep_out_zones_;
+  std::vector<Eigen::AlignedBox3d> keep_in_zones_;
+  std::vector<Eigen::AlignedBox3d> keep_out_zones_;
   Vec3Vec support_vectors;
   std::vector<decimal_t> obs_ub;
   decimal_t obs_clearance;

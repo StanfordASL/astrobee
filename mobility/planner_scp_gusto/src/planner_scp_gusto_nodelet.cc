@@ -87,7 +87,7 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
       ros::Duration(ros::Rate(DEFAULT_DIAGNOSTICS_RATE)),
         &PlannerSCPGustoNodelet::DiagnosticsCallback, this, false, true);
     // Create a new optimization problem
-    top = new scp::TOP(10., 201);
+    top = new scp::TOP(20., 401);
     top->Solve();
     // Save node handle
     nh_ = nh;
@@ -184,6 +184,8 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
               inertia_msg.inertia.ixy, inertia_msg.inertia.iyy, inertia_msg.inertia.iyz,
               inertia_msg.inertia.ixz, inertia_msg.inertia.iyz, inertia_msg.inertia.izz;
     top->Jinv = top->J.inverse();
+    top->keep_in_zones_ = keep_in_zones_;
+    top->keep_out_zones_ = keep_out_zones_;
 
     /*
     if (candidate_Tf > top->Tf) {
@@ -316,6 +318,10 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
     Eigen::Vector3d zmin, zmax;   // Min and max of each zone
     Eigen::AlignedBox3d temp;
 
+    // Reset keepin and keepout zones
+    keep_in_zones_.clear();
+    keep_out_zones_.clear();
+
     // Iterate through each zone and save
     for (auto &zone : zones) {
       zmin << std::min(zone.min.x, zone.max.x),
@@ -337,6 +343,7 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
         temp.extend(Eigen::Vector3d(zmin(0), zmin(1), zmin(2)));
         temp.extend(Eigen::Vector3d(zmax(0), zmax(1), zmax(2)));
         keep_in_zones_.push_back(temp);
+        std::cout << "Keepin zone: " << zmin.transpose() << " " << zmax.transpose() << std::endl;
       } else {
         // Inflate obstacles by Astrobee radius
         zmin << zmin(0) - radius, zmin(1) - radius, zmin(2) - radius;
@@ -345,10 +352,17 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
         temp.extend(Eigen::Vector3d(zmin(0), zmin(1), zmin(2)));
         temp.extend(Eigen::Vector3d(zmax(0), zmax(1), zmax(2)));
         keep_out_zones_.push_back(temp);
+        std::cout << "Keepin zone: " << zmin.transpose() << " " << zmax.transpose() << std::endl;
       }
     }
+    bool add_custom_keep_out_zone = true;
+    if (add_custom_keep_out_zone) {
+      Eigen::AlignedBox3d temp;
+      temp.extend(Eigen::Vector3d(-0.1, -0.1, -2));
+      temp.extend(Eigen::Vector3d(0.1, 0.1, 0));
+      keep_out_zones_.push_back(temp);
+    }
 
-    std::cout << "# of zones found: " << zones.size() << std::endl;
     std::cout << "# of keepin zones: " << keep_in_zones_.size() << std::endl;
     std::cout << "# of keepout zones: " << keep_out_zones_.size() << std::endl;
 
