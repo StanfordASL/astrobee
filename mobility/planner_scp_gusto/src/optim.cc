@@ -43,15 +43,15 @@ TOP::TOP(decimal_t Tf_, int N_)
   enforce_init_cond = true;
   enforce_final_cond = true;
   enforce_lin_dynamics = true;
-  enforce_rot_dynamics = true;
-  enforce_force_norm = true;
-  enforce_moment_norm = true;
+  enforce_rot_dynamics = false;
+  enforce_force_norm = false;
+  enforce_moment_norm = false;
   enforce_state_LB = false;
-  enforce_state_UB = true;
-  enforce_lin_vel_norm = true;
-  enforce_ang_vel_norm = true;
-  enforce_trust_region_const = true;
-  enforce_obs_avoidance_const = true;
+  enforce_state_UB = false;
+  enforce_lin_vel_norm = false;
+  enforce_ang_vel_norm = false;
+  enforce_trust_region_const = false;
+  enforce_obs_avoidance_const = false;
 
   penalize_total_force = false;
   penalize_total_moment = false;
@@ -312,6 +312,12 @@ void TOP::InitTrajStraightline() {
 }
 
 void TOP::SetSimpleConstraints() {
+  std::cout << "Setting simple constraints" << std::endl;
+  std::cout << "enforce_init_cond: " << enforce_init_cond << std::endl;
+  std::cout << "enforce_final_cond: " << enforce_final_cond << std::endl;
+  std::cout << "enforce_lin_dynamics: " << enforce_lin_dynamics << std::endl;
+  std::cout << "enforce_rot_dynamics: " << enforce_rot_dynamics << std::endl;
+
   Mat7 eye;
   eye.setIdentity();
 
@@ -334,6 +340,12 @@ void TOP::SetSimpleConstraints() {
         }
         row_idx++;
       }
+    }
+    if (ii == 0) {
+      std::cout << "Linear constraints matrix Ak_di part: \n"
+                << linear_con_mat.block(0, 0, state_dim_lin, state_dim_lin) << std::endl;
+      std::cout << "Linear constraints matrix Bk_di part: \n"
+                << linear_con_mat.block(0, state_dim * N, state_dim_lin, control_dim_lin) << std::endl;
     }
 
     if (enforce_rot_dynamics) {
@@ -819,7 +831,7 @@ void TOP::UpdateDoubleIntegrator() {
     Ak_di(ii, 3+ii) = dh;
     Ak_di(ii+3, ii+3) = 1;
 
-    Bk_di(ii, ii) = 0.5 * pow(dh, 2) / mass;
+    // Bk_di(ii, ii) = 0.5 * pow(dh, 2) / mass; // Not part of a double integrator
     Bk_di(3+ii, ii) = dh / mass;
   }
 }
@@ -918,6 +930,15 @@ bool TOP::Solve() {
   solved_ = false;
   InitTrajStraightline();
 
+  std::cout << "SCP::InitTrajStraightline complete" << std::endl;
+  std::cout << "SCP:: start of init traj is " << Xprev[0].transpose() << std::endl;
+  std::cout << "SCP:: end of init traj is " << Xprev[N-1].transpose() << std::endl;
+  // ROS_ERROR_STREAM("SCP::InitTrajStraightline done");
+
+  std::cout << "TOP:: mass: " << mass << std::endl;
+  std::cout << "TOP:: inertia: " << J << std::endl;
+
+
   // // Print init-traj states
   // std::cout << "After init traj straight line: " << std::endl;
   // for (size_t jj = 0; jj < N-1; jj++) {
@@ -940,8 +961,10 @@ bool TOP::Solve() {
     solver_ready_ = false;
   }
 
+  std::cout << "SCP::Warm start complete" << std::endl;
+
   // TODO(somrita): Reset max_iter
-  max_iter = 20;
+  max_iter = 3;
   for (size_t kk = 0; kk < max_iter; kk++) {
     // Update dynamics matrices
     UpdateDoubleIntegrator();
@@ -1061,6 +1084,9 @@ bool TOP::Solve() {
     // if (solved_ && state_ineq_con_satisfied) {
     //   return true;
     // }
+    if (solved_) {
+      return true;
+    }
   }
 
   // if (SatisfiesStateInequalityConstraints()) {

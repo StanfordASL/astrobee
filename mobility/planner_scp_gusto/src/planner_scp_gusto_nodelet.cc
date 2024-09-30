@@ -122,6 +122,9 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
       return;
     }
 
+    std::cout << "SCP::PlanCallback start " << states.front().pose.position << std::endl;
+    std::cout << "SCP::PlanCallback goal " << states.back().pose.position << std::endl;
+
     scp::Vec13 x0, xg;
     x0.segment(0, 3) << states.front().pose.position.x, states.front().pose.position.y,
       states.front().pose.position.z;
@@ -141,7 +144,18 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
 
     // get sample increment
     double radius;
-    if (!cfg_.Get<double>("robot_radius", radius)) radius = 0.26;
+    if (!cfg_.Get<double>("robot_radius", radius)) {
+      radius = 0.26;
+      // TODO(Somrita): Need to read from mapper.config instead of granite.config, i.e., need a new config listener
+      // ROS_ERROR("Failed to load robot radius from config");
+      // return;
+    }
+
+    geometry_msgs::InertiaStamped inertia_msg;
+    if (!ff_util::FlightUtil::GetInertiaConfig(inertia_msg)) {
+      ROS_ERROR("Failed to load inertia from config");
+      return;
+    }
 
     // try to get zones
     std::vector<ff_msgs::Zone> zones;
@@ -164,6 +178,12 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
     top->x0 = x0;
     top->xg = xg;
     top->radius_ = radius;
+    // top->mass = mass;
+    top->mass = inertia_msg.inertia.m;
+    top->J << inertia_msg.inertia.ixx, inertia_msg.inertia.ixy, inertia_msg.inertia.ixz,
+              inertia_msg.inertia.ixy, inertia_msg.inertia.iyy, inertia_msg.inertia.iyz,
+              inertia_msg.inertia.ixz, inertia_msg.inertia.iyz, inertia_msg.inertia.izz;
+    top->Jinv = top->J.inverse();
 
     /*
     if (candidate_Tf > top->Tf) {
@@ -177,7 +197,7 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
     */
 
     // solve
-    ROS_ERROR_STREAM("Starting SCP");
+    ROS_INFO_STREAM("Starting SCP");
     // auto start = std::chrono::high_resolution_clock::now();
     bool is_solved = top->Solve();
     // auto stop = std::chrono::high_resolution_clock::now();
@@ -193,6 +213,7 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
       sample_trajectory(&plan_result.segment);
       plan_result.response = RESPONSE::SUCCESS;
       NODELET_FATAL_STREAM("Returning plan");
+      ROS_INFO_STREAM("SCP::Planner found solution!");
     } else {
       ROS_ERROR_STREAM("SCP::Planner failed to find solution!");
     }
@@ -326,6 +347,10 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
         keep_out_zones_.push_back(temp);
       }
     }
+
+    std::cout << "# of zones found: " << zones.size() << std::endl;
+    std::cout << "# of keepin zones: " << keep_in_zones_.size() << std::endl;
+    std::cout << "# of keepout zones: " << keep_out_zones_.size() << std::endl;
 
     // Update position bds for solver
     for (size_t ii = 0; ii < 3; ii++) {
