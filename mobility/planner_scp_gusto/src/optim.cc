@@ -51,7 +51,7 @@ TOP::TOP(decimal_t Tf_, int N_)
   enforce_lin_vel_norm = false;
   enforce_ang_vel_norm = false;
   enforce_trust_region_const = false;
-  enforce_obs_avoidance_const = false;
+  enforce_obs_avoidance_const = true;
 
   penalize_total_force = false;
   penalize_total_moment = false;
@@ -661,9 +661,14 @@ void TOP::SetSimpleConstraints() {
   }
 
   if (enforce_obs_avoidance_const) {
+    if (keep_out_zones_.size() == 0) {
+      return;
+    }
     Eigen::AlignedBox3d box = keep_out_zones_[0];
     Eigen::Vector3d ko_min = box.min();
     Eigen::Vector3d ko_max = box.max();
+    std::cout << "ko_min: " << ko_min.transpose() << std::endl;
+    std::cout << "ko_max: " << ko_max.transpose() << std::endl;
     decimal_t ko_x_min = ko_min(0);
     decimal_t ko_x_max = ko_max(0);
     decimal_t ko_y_min = ko_min(1);
