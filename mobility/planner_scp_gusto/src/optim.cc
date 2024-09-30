@@ -146,14 +146,15 @@ size_t TOP::GetNumTOPVariables() {
   // TODO(somrita): Continue updating these
   size_t num_force_norm_slack_vars = penalize_total_force ? (control_dim_lin+1)*(N-1) : control_dim_lin*(N-1);
   size_t num_moment_norm_slack_vars = penalize_total_moment ? (control_dim_nlin+1)*(N-1) : control_dim_nlin*(N-1);
-  return state_dim*N  // State variables
-  + control_dim*(N-1)  // Control variables
-  + num_force_norm_slack_vars  // Force norm slack variables
-  + num_moment_norm_slack_vars  // Moment norm slack variables
-  + state_bd_dim*(N-1)  // State LB slack variables
-  + state_bd_dim*(N-1)  // State UB slack variables
-  + (lin_vel_dim+1)*(N-1)  // Linear velocity norm slack variables
-  + (ang_vel_dim+1)*(N-1);  // Angular velocity norm slack variables
+  return state_dim * N                  // State variables
+         + control_dim * (N - 1)        // Control variables
+         + num_force_norm_slack_vars    // Force norm slack variables
+         + num_moment_norm_slack_vars   // Moment norm slack variables
+         + state_bd_dim * (N - 1)       // State LB slack variables
+         + state_bd_dim * (N - 1)       // State UB slack variables
+         + (lin_vel_dim + 1) * (N - 1)  // Linear velocity norm slack variables
+         + (ang_vel_dim + 1) * (N - 1)  // Angular velocity norm slack variables
+         + 2 * (N - 1);                 // Obstacle avoidance slack variables
 }
 
 size_t TOP::GetNumTOPConstraints() {
@@ -167,7 +168,8 @@ size_t TOP::GetNumTOPConstraints() {
   + 2*state_bd_dim*(N-1)  // State LB constraints
   + 2*state_bd_dim*(N-1)  // State UB constraints
   + 11*(N-1)  // Linear velocity norm constraints
-  + 11*(N-1);  // Angular velocity norm constraints
+  + 11*(N-1)  // Angular velocity norm constraints
+  + 4*(N-1);  // Obstacle avoidance constraints
 }
 
 void TOP::ResetSCPParams() {
@@ -318,6 +320,7 @@ void TOP::SetSimpleConstraints() {
   std::cout << "enforce_final_cond: " << enforce_final_cond << std::endl;
   std::cout << "enforce_lin_dynamics: " << enforce_lin_dynamics << std::endl;
   std::cout << "enforce_rot_dynamics: " << enforce_rot_dynamics << std::endl;
+  std::cout << "enforce_obs_avoidance_const: " << enforce_obs_avoidance_const << std::endl;
 
   Mat7 eye;
   eye.setIdentity();
@@ -654,6 +657,45 @@ void TOP::SetSimpleConstraints() {
       linear_con_mat.coeffRef(row_idx, z_slack_var_idx) = -1.0;
       upper_bound(row_idx) = desired_vel_;
       row_idx++;
+    }
+  }
+
+  if (enforce_obs_avoidance_const) {
+    Eigen::AlignedBox3d box = keep_out_zones_[0];
+    Eigen::Vector3d ko_min = box.min();
+    Eigen::Vector3d ko_max = box.max();
+    decimal_t ko_x_min = ko_min(0);
+    decimal_t ko_x_max = ko_max(0);
+    decimal_t ko_y_min = ko_min(1);
+    decimal_t ko_y_max = ko_max(1);
+    decimal_t ko_center_x = (ko_x_max + ko_x_min)/2;
+    decimal_t ko_center_y = (ko_y_max + ko_y_min)/2;
+    std::cout << "ko_center_x: " << ko_center_x << std::endl;
+    std::cout << "ko_center_y: " << ko_center_y << std::endl;
+    for (size_t ii = 0; ii < N-1; ii++) {
+      for (size_t kk = 0; kk < 2; kk++) {  // x and y
+        size_t d_slack_var_idx = state_dim*N+control_dim*(N-1)+
+        num_force_norm_slack_vars+num_moment_norm_slack_vars+
+        state_bd_dim*(N-1)+state_bd_dim*(N-1)+
+        (lin_vel_dim+1)*(N-1)+(ang_vel_dim+1)*(N-1)+2*ii+kk;
+        // -d_ik <= 0
+        linear_con_mat.coeffRef(row_idx, d_slack_var_idx) = -1.0;
+        upper_bound(row_idx) = 0;
+        row_idx++;
+        // Using prev, determine active constraints
+        decimal_t prev = Xprev[ii](kk);
+        if (prev > (ko_min(kk) + ko_max(kk)) / 2) {  // If x > ko_center_x, then -x + d_i <= -ko_x_max
+          linear_con_mat.coeffRef(row_idx, state_dim*(ii+1)+kk) = -1.0;
+          linear_con_mat.coeffRef(row_idx, d_slack_var_idx) = 1.0;
+          upper_bound(row_idx) = -ko_max(kk);
+          row_idx++;
+        } else {  // If x < ko_center_x, then x + d_i <= ko_x_min
+          linear_con_mat.coeffRef(row_idx, state_dim*(ii+1)+kk) = 1.0;
+          linear_con_mat.coeffRef(row_idx, d_slack_var_idx) = 1.0;
+          upper_bound(row_idx) = ko_min(kk);
+          row_idx++;
+        }
+      }
     }
   }
 }
