@@ -51,7 +51,7 @@ TOP::TOP(decimal_t Tf_, int N_)
   enforce_lin_vel_norm = false;
   enforce_ang_vel_norm = false;
   enforce_trust_region_const = false;
-  enforce_obs_avoidance_const = true;
+  enforce_obs_avoidance_const = false;
 
   penalize_total_force = false;
   penalize_total_moment = false;
