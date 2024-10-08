@@ -116,17 +116,19 @@
 #define NODE_PERCH_CTL                              "perch_ctl"
 #define NODE_EKF                                    "ekf"
 #define NODE_GRAPH_LOC                              "graph_loc"
-#define NODE_IMU_AUG                                "imu_aug"
-#define NODE_IMU_BIAS_TESTER                        "imu_bias_tester"
+#define NODE_GRAPH_VIO                              "graph_vio"
+#define NODE_POSE_EXTR                              "pose_extr"
 #define NODE_SIM_LOC                                "sim_loc"
 #define NODE_FAM                                    "fam"
 
 #define TOPIC_GRAPH_LOC                             "graph_loc/graph"
+#define TOPIC_GRAPH_VIO                             "graph_vio/graph"
 #define TOPIC_GRAPH_LOC_STATE                       "graph_loc/state"
+#define TOPIC_GRAPH_VIO_STATE                       "graph_vio/state"
 #define TOPIC_AR_TAG_POSE                           "ar_tag/pose"
 #define TOPIC_SPARSE_MAPPING_POSE                   "sparse_mapping/pose"
-#define TOPIC_IMU_BIAS_TESTER_POSE                  "imu_bias_tester/pose"
-#define TOPIC_IMU_BIAS_TESTER_VELOCITY              "imu_bias_tester/velocity"
+#define TOPIC_IMU_BIAS_EXTRAPOLATOR_POSE            "imu_bias_extrapolator/pose"
+#define TOPIC_IMU_BIAS_EXTRAPOLATOR_VELOCITY        "imu_bias_extrapolator/velocity"
 
 #define ACTION_GNC_CTL_CONTROL                      "gnc/control"
 
@@ -284,6 +286,7 @@
 #define NODE_MAPPED_LANDMARKS                       "ml"
 #define NODE_VIVE_LOCALIZATION                      "vive_localization"
 
+#define TOPIC_VIO_POSE                              "vio/pose"
 #define TOPIC_LOCALIZATION_POSE                     "loc/pose"
 #define TOPIC_LOCALIZATION_TWIST                    "loc/twist"
 #define TOPIC_LOCALIZATION_TRUTH                    "loc/truth/pose"
@@ -312,6 +315,7 @@
 #define SERVICE_LOCALIZATION_HR_ENABLE              "loc/hr/enable"
 #define SERVICE_LOCALIZATION_PL_ENABLE              "loc/pl/enable"
 #define SERVICE_LOCALIZATION_RESET_MAP              "loc/ml/reset_map"
+#define SERVICE_LOCALIZATION_RESET_MAP_LOC          "loc/ml/reset_map_loc"
 
 // Localization manager
 
@@ -384,6 +388,7 @@
 #define TOPIC_HARDWARE_DOCK_CAM                     "hw/cam_dock"
 #define TOPIC_HARDWARE_CAM_SUFFIX_BAYER_RAW         "_bayer"
 #define TOPIC_HARDWARE_CAM_SUFFIX_BAYER_COLOR       "_color"
+#define TOPIC_HARDWARE_CAM_INFO                     "/camera_info"
 #define TOPIC_HARDWARE_SCI_CAM                      "hw/cam_sci"
 #define TOPIC_HARDWARE_LIGHT_FRONT                  "hw/light_front"
 #define TOPIC_HARDWARE_LIGHT_AFT                    "hw/light_aft"
@@ -449,5 +454,6 @@
 #define SERVICE_HARDWARE_PMC_TIMEOUT                "hw/pmc/set_timeout"
 
 #define SERVICE_STREAMING_LIGHTS                    "hw/signal_lights/streaming"
+#define SERVICE_SET_EXPOSURE                        "/set_exposure"
 
 #endif  // FF_COMMON_FF_NAMES_H_

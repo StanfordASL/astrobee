@@ -24,19 +24,38 @@
 #include <config_reader/config_reader.h>
 #include <cv_bridge/cv_bridge.h>
 #include <ff_msgs/VisualLandmarks.h>
+#include <localization_common/timer.h>
 #include <sensor_msgs/PointCloud2.h>
+
+#include <deque>
 
 namespace localization_node {
 
+struct ThresholdParams {
+  int success_history_size;
+  double min_success_rate;
+  double max_success_rate;
+  int min_features;
+  int max_features;
+  bool adjust_num_similar;
+  int min_num_similar;
+  int max_num_similar;
+};
+
 class Localizer {
  public:
-  explicit Localizer(sparse_mapping::SparseMap* comp_map_ptr);
-  ~Localizer();
-  void ReadParams(config_reader::ConfigReader* config);
+  explicit Localizer(sparse_mapping::SparseMap* map);
+  void ReadParams(config_reader::ConfigReader& config);
   bool Localize(cv_bridge::CvImageConstPtr image_ptr, ff_msgs::VisualLandmarks* vl,
      Eigen::Matrix2Xd* image_keypoints = NULL);
  private:
+  void AdjustThresholds();
+
   sparse_mapping::SparseMap* map_;
+  // Success params for adjusting keypoint thresholds
+  std::deque<int> successes_;
+  ThresholdParams params_;
+  localization_common::Timer timer_ = localization_common::Timer("VL Runtime");
 };
 
 };  // namespace localization_node

@@ -72,7 +72,9 @@ void LocalizationNodelet::Initialize(ros::NodeHandle* nh) {
 
   config_.AddFile("cameras.config");
   config_.AddFile("localization.config");
-  config_.ReadFiles();
+  if (!config_.ReadFiles()) {
+    ROS_FATAL("Failed to read config files.");
+  }
 
   // Resolve the full path to the AR tag file specified for the current world
   std::string map_file;
@@ -120,6 +122,8 @@ void LocalizationNodelet::Initialize(ros::NodeHandle* nh) {
 
   enable_srv_ = nh->advertiseService(SERVICE_LOCALIZATION_ML_ENABLE, &LocalizationNodelet::EnableService, this);
   reset_map_srv_ = nh->advertiseService(SERVICE_LOCALIZATION_RESET_MAP, &LocalizationNodelet::ResetMapService, this);
+  reset_map_loc_client_ = nh->serviceClient<ff_msgs::ResetMap>(
+                                                SERVICE_LOCALIZATION_RESET_MAP_LOC);
 }
 
 void LocalizationNodelet::ReadParams(void) {
@@ -127,7 +131,7 @@ void LocalizationNodelet::ReadParams(void) {
     ROS_ERROR("Failed to read config files.");
     return;
   }
-  if (inst_) inst_->ReadParams(&config_);
+  if (inst_) inst_->ReadParams(config_);
 }
 
 bool LocalizationNodelet::EnableService(ff_msgs::SetBool::Request & req, ff_msgs::SetBool::Response & res) {
@@ -147,7 +151,14 @@ bool LocalizationNodelet::ResetMapService(ff_msgs::ResetMap::Request& req, ff_ms
     map_file = req.map_file;
   }
   LOG(INFO) << "Resetting map to " << map_file;
-  return ResetMap(map_file);
+
+  res.success = ResetMap(map_file);
+
+  ff_msgs::ResetMap map_srv;
+  if (!reset_map_loc_client_.call(map_srv)) {
+    res.success = false;
+  }
+  return true;
 }
 
 void LocalizationNodelet::ImageCallback(const sensor_msgs::ImageConstPtr& msg) {
