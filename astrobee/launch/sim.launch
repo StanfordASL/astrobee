@@ -62,10 +62,12 @@
        default="10.7 -8.3 5.1 0.707 0 -0.707 0" />           <!-- iss: perch position     -->
   <arg if="$(eval arg('world')=='granite' and arg('perch')==0)"
        name="pose"
-       default="0 0 -0.7 0 0 0 1" />                         <!-- granite: docked         -->
+       default="-0.4 0.4 -0.7 0 0 0 1" />                         <!-- granite: docked         -->
+       <!-- default="0 0 -0.7 0 0 0 1" />                              granite: docked         -->
   <arg if="$(eval arg('world')=='granite' and arg('perch'))"
        name="pose"
-       default="0 0 -0.7 0 0 0 1" />                         <!-- granite: perch position -->
+       default="-0.4 0.4 -0.7 0 0 0 1" />                         <!-- granite: perch position -->
+       <!-- default="0 0 -0.7 0 0 0 1" />                         granite: perch position -->
 
   <!-- Multi-robot simulation -->
   <arg name="honey" default="false" />          <!-- Insert a honey robot    -->
