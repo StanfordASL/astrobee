@@ -297,6 +297,9 @@ void TOP::InitTrajStraightline() {
   Quat q0 = Quat(x0(9), x0(6), x0(7), x0(8));
   Quat qg = Quat(xg(9), xg(6), xg(7), xg(8));
 
+  std::cout << "q0: " << q0.x() << " " << q0.y() << " " << q0.z() << " " << q0.w() << std::endl;
+  std::cout << "qg: " << qg.x() << " " << qg.y() << " " << qg.z() << " " << qg.w() << std::endl;
+
   for (size_t ii = 0; ii < N; ii++) {
     Xprev[ii] = x0 + (xg-x0)*ii/(N-1.);
     // Quat q = q0;

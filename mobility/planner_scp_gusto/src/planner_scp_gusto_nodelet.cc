@@ -140,6 +140,13 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
       states.back().pose.orientation.z, states.back().pose.orientation.w;
     xg.segment(10, 3) << 0, 0, 0;
 
+    std::cout << "SCP:: states.front() orientation " << states.front().pose.orientation.x << " "
+      << states.front().pose.orientation.y << " " << states.front().pose.orientation.z << " "
+      << states.front().pose.orientation.w << std::endl;
+    std::cout << "SCP:: states.back() orientation " << states.back().pose.orientation.x << " "
+      << states.back().pose.orientation.y << " " << states.back().pose.orientation.z << " "
+      << states.back().pose.orientation.w << std::endl;
+
     // double candidate_Tf = 2*ChooseFinalTime(states.front(), states.back());
 
     // get sample increment
@@ -175,6 +182,8 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
     }
 
     // update solver settings
+    std::cout << "SCP:: Setting x0 as " << x0.transpose() << std::endl;
+    std::cout << "SCP:: Setting xg as " << xg.transpose() << std::endl;
     top->x0 = x0;
     top->xg = xg;
     top->radius_ = radius;
