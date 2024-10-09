@@ -356,18 +356,21 @@ void TOP::SetSimpleConstraints() {
     }
 
     if (enforce_rot_dynamics) {
-      // Nonlinear attitude dynamics second
-      // c = dh*(A*Xprev + B*Uprev - fk) = (eye + dh*As)*x[ii] + (dh*Bs)*u[ii] -x[ii+1]
+      // Nonlinear attitude dynamics
+      // q[ii+1] = q[ii] + dh*As.block(0,0,4,4)*q[ii]
+      // omega[ii+1] = omega[ii] + dh*Bs.block(4,4,3,3)*u[ii] + dh*fs.segment(4,3)
+      // x[ii+1] = x[ii] + dh*As*x[ii] + dh*Bs*u[ii] + dh*fs
+      // -dh*fs = -x[ii+1] + (eye + dh*As)*x[ii] + dh*Bs*u[ii]
       // As[ii] is a 7x7 matrix
       // Bs[ii] is a 7x3 matrix
       // fs[ii] is a 7x1 vector
-      Vec7 Xprev_k = Xprev[ii].segment(6, 7);
-      Vec3 Uprev_k = Uprev[ii].segment(3, 3);
-      Vec7 fk = fs[ii];
-      Vec7 ck = dh*(As[ii]*Xprev_k + Bs[ii]*Uprev_k - fk);
+      // As.block(0,0,4,4) is a 4x4 matrix (rest is zeros)
+      // Bs.block(4,0,3,3) is a 3x3 matrix  (rest is zeros)
+      // fs.segment(4,3) is a 3x1 vector (rest is zeros)
+
       for (size_t jj = 0; jj < state_dim_nlin; jj++) {
-        lower_bound(row_idx) = ck(jj);
-        upper_bound(row_idx) = ck(jj);
+        lower_bound(row_idx) = -dh*fs[ii](jj);
+        upper_bound(row_idx) = -dh*fs[ii](jj);
 
         // Simple explicit Euler integration scheme
         linear_con_mat.coeffRef(row_idx, state_dim*(ii+1)+state_dim_lin+jj) = -1.0;
@@ -381,6 +384,14 @@ void TOP::SetSimpleConstraints() {
         }
         row_idx++;
       }
+    }
+    if (ii == 0) {
+      std::cout << "Linear constraints matrix As part: \n"
+                << As[ii] << std::endl;
+      std::cout << "Linear constraints matrix Bs part: \n"
+                << Bs[ii] << std::endl;
+      std::cout << "Linear constraints matrix fs part: \n"
+                << fs[ii] << std::endl;
     }
   }
 
@@ -890,39 +901,24 @@ void TOP::UpdateDoubleIntegrator() {
 void TOP::UpdateF(Vec7& f, Vec13& X, Vec6& U) {
   f.setZero();
 
-  Vec4 q = X.segment(6, 4);
-  decimal_t q_norm = q.norm();
-  q /= q_norm;
+  decimal_t Jxx = J(0, 0);
+  decimal_t Jyy = J(1, 1);
+  decimal_t Jzz = J(2, 2);
 
-  Vec3 w = X.segment(10, 3);
+  decimal_t wx = X(10);
+  decimal_t wy = X(11);
+  decimal_t wz = X(12);
 
-  decimal_t wx = w(0);
-  decimal_t wy = w(1);
-  decimal_t wz = w(2);
+  Vec3 negJinvOmegaJomega;
+  negJinvOmegaJomega << (Jyy-Jzz)*wz*wy/Jxx,
+                        (Jzz-Jxx)*wx*wz/Jyy,
+                        (Jxx-Jyy)*wy*wx/Jzz;
 
-  Mat4 omega_skew;
-  omega_skew << 0, -wz, wy, wx,
-                wz, 0, -wx, wy,
-                -wy, wx, 0, wz,
-                -wx, -wy, -wz, 0;
-
-  // TODO(somrita): matrix below seems wrong. remove.
-  // omega_skew << 0, wz, -wy, wz,
-  //           -wz, 0, wx, wy,
-  //           wy, -wx, 0, wz,
-  //           -wx, -wy, -wz, 0;
-  // Eq. 305 in A Survey of Attitude Representations; Shuster 1993
-  f.segment(0, 4) = 0.5 * omega_skew * q;
-  f.segment(4, 3) = Jinv*(U.segment(3, 3) - w.cross(J*w));
+  f.segment(4, 3) = negJinvOmegaJomega;
 }
 
 void TOP::UpdateA(Mat7& A, Vec13& X, Vec6& U) {
   A.setZero();
-
-  decimal_t qx = X(6);
-  decimal_t qy = X(7);
-  decimal_t qz = X(8);
-  decimal_t qw = X(9);
 
   decimal_t wx = X(10);
   decimal_t wy = X(11);
@@ -934,30 +930,6 @@ void TOP::UpdateA(Mat7& A, Vec13& X, Vec6& U) {
                 -wy, wx, 0, wz,
                 -wx, -wy, -wz, 0;
   A.block(0, 0, 4, 4) = 0.5*df_dq;
-
-  // TODO(somrita): Remove below matrix
-  // omega_skew << 0, wz, -wy, wz,
-  //           -wz, 0, wx, wy,
-  //           wy, -wx, 0, wz,
-  //           -wx, -wy, -wz, 0;
-
-  Mat4x3 df_dw;
-  df_dw << qw, qz, -qy,
-          -qz, qw, qx,
-          qy, -qx, qw,
-          -qx, -qy, -qz;
-  A.block(0, 4, 4, 3) = 0.5*df_dw;
-
-  decimal_t Jxx = J(0, 0);
-  decimal_t Jyy = J(1, 1);
-  decimal_t Jzz = J(2, 2);
-
-  Mat3 quat_skew;
-  quat_skew << 0, (Jyy-Jzz)*wz/Jxx, (Jyy-Jzz)*wy/Jxx,
-              -(Jxx-Jzz)*wz/Jyy, 0, -(Jxx-Jzz)*wx/Jyy,
-              (Jxx-Jyy)*wy/Jzz, (Jxx-Jyy)*wx/Jzz, 0;
-
-  A.block(4, 4, 3, 3) = quat_skew;
 }
 
 void TOP::UpdateB(Mat7x3& B, Vec13& X, Vec6& U) {
