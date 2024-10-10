@@ -153,8 +153,8 @@ size_t TOP::GetNumTOPVariables() {
          + state_bd_dim * (N - 1)       // State LB slack variables
          + state_bd_dim * (N - 1)       // State UB slack variables
          + (lin_vel_dim + 1) * (N - 1)  // Linear velocity norm slack variables
-         + (ang_vel_dim + 1) * (N - 1)  // Angular velocity norm slack variables
-         + 2 * (N - 1);                 // Obstacle avoidance slack variables
+         + (ang_vel_dim + 1) * (N - 1);  // Angular velocity norm slack variables
+        //  + 2 * (N - 1);                 // Obstacle avoidance slack variables
 }
 
 size_t TOP::GetNumTOPConstraints() {
@@ -169,7 +169,7 @@ size_t TOP::GetNumTOPConstraints() {
   + 2*state_bd_dim*(N-1)  // State UB constraints
   + 11*(N-1)  // Linear velocity norm constraints
   + 11*(N-1)  // Angular velocity norm constraints
-  + 4*(N-1);  // Obstacle avoidance constraints
+  + 3*(N-1);  // Obstacle avoidance constraints
 }
 
 void TOP::ResetSCPParams() {
@@ -359,8 +359,8 @@ void TOP::SetSimpleConstraints() {
       // Nonlinear attitude dynamics
       // q[ii+1] = q[ii] + dh*As.block(0,0,4,4)*q[ii]
       // omega[ii+1] = omega[ii] + dh*Bs.block(4,4,3,3)*u[ii] + dh*fs.segment(4,3)
-      // x[ii+1] = x[ii] + dh*As*x[ii] + dh*Bs*u[ii] + dh*fs
-      // -dh*fs = -x[ii+1] + (eye + dh*As)*x[ii] + dh*Bs*u[ii]
+      // ==> x[ii+1] = x[ii] + dh*As*x[ii] + dh*Bs*u[ii] + dh*fs
+      // ==> -dh*fs = -x[ii+1] + (eye + dh*As)*x[ii] + dh*Bs*u[ii]
       // As[ii] is a 7x7 matrix
       // Bs[ii] is a 7x3 matrix
       // fs[ii] is a 7x1 vector
@@ -386,11 +386,11 @@ void TOP::SetSimpleConstraints() {
       }
     }
     if (ii == 0) {
-      std::cout << "Linear constraints matrix As part: \n"
+      std::cout << "Rotational constraints matrix As part: \n"
                 << As[ii] << std::endl;
-      std::cout << "Linear constraints matrix Bs part: \n"
+      std::cout << "Rotational constraints matrix Bs part: \n"
                 << Bs[ii] << std::endl;
-      std::cout << "Linear constraints matrix fs part: \n"
+      std::cout << "Rotational constraints matrix fs part: \n"
                 << fs[ii] << std::endl;
     }
   }
@@ -678,44 +678,89 @@ void TOP::SetSimpleConstraints() {
     if (keep_out_zones_.size() == 0) {
       return;
     }
+    if (keep_out_zones_.size() > 1) {
+      std::cout << "Can only account for 1 keep out zone currently. Found " << std::to_string(keep_out_zones_.size())
+                << std::endl;
+      throw std::runtime_error("Can only account for 1 keep out zone currently. Found " +
+                               std::to_string(keep_out_zones_.size()));
+    }
     Eigen::AlignedBox3d box = keep_out_zones_[0];
     Eigen::Vector3d ko_min = box.min();
     Eigen::Vector3d ko_max = box.max();
     std::cout << "ko_min: " << ko_min.transpose() << std::endl;
     std::cout << "ko_max: " << ko_max.transpose() << std::endl;
-    decimal_t ko_x_min = ko_min(0);
-    decimal_t ko_x_max = ko_max(0);
-    decimal_t ko_y_min = ko_min(1);
-    decimal_t ko_y_max = ko_max(1);
-    decimal_t ko_center_x = (ko_x_max + ko_x_min)/2;
-    decimal_t ko_center_y = (ko_y_max + ko_y_min)/2;
-    std::cout << "ko_center_x: " << ko_center_x << std::endl;
-    std::cout << "ko_center_y: " << ko_center_y << std::endl;
+    Eigen::Vector3d ko_center = (ko_min + ko_max)/2;
+    std::cout << "ko_center: " << ko_center.transpose() << std::endl;
     for (size_t ii = 0; ii < N-1; ii++) {
-      for (size_t kk = 0; kk < 2; kk++) {  // x and y
-        size_t d_slack_var_idx = state_dim*N+control_dim*(N-1)+
-        num_force_norm_slack_vars+num_moment_norm_slack_vars+
-        state_bd_dim*(N-1)+state_bd_dim*(N-1)+
-        (lin_vel_dim+1)*(N-1)+(ang_vel_dim+1)*(N-1)+2*ii+kk;
-        // -d_ik <= 0
-        linear_con_mat.coeffRef(row_idx, d_slack_var_idx) = -1.0;
-        upper_bound(row_idx) = 0;
-        row_idx++;
-        // Using prev, determine active constraints
-        decimal_t prev = Xprev[ii](kk);
-        if (prev > (ko_min(kk) + ko_max(kk)) / 2) {  // If x > ko_center_x, then -x + d_i <= -ko_x_max
-          linear_con_mat.coeffRef(row_idx, state_dim*(ii+1)+kk) = -1.0;
-          linear_con_mat.coeffRef(row_idx, d_slack_var_idx) = 1.0;
-          upper_bound(row_idx) = -ko_max(kk);
-          row_idx++;
-        } else {  // If x < ko_center_x, then x + d_i <= ko_x_min
-          linear_con_mat.coeffRef(row_idx, state_dim*(ii+1)+kk) = 1.0;
-          linear_con_mat.coeffRef(row_idx, d_slack_var_idx) = 1.0;
-          upper_bound(row_idx) = ko_min(kk);
-          row_idx++;
+      for (size_t jj = 0; jj < 3; jj++) {
+        decimal_t lb = pos_min_[jj];
+        decimal_t ub = pos_max_[jj];
+        // lb < x < ub
+        // Either ko_max < x < ub or lb < x < ko_min
+        bool active_proj = true;
+        for (size_t kk = 0; kk < 3; kk++) {
+          if (kk == jj) {
+            continue;
+          }
+          if ((Xprev[ii](kk) > ko_max[kk]) || (Xprev[ii](kk) < ko_min[kk])) {
+            // not active projection
+            active_proj = false;
+            // std::cout << "Seeing x y z " << std::to_string(Xprev[ii](0)) << ", " << std::to_string(Xprev[ii](1)) <<
+            // ", " << std::to_string(Xprev[ii](2)) << " and judging that no constraint is required." << std::endl;
+            break;
+          }
         }
+        if (active_proj) {
+          if (Xprev[ii](jj) >= ko_center[jj]) {
+            lb = ko_max[jj];
+          } else {
+            ub = ko_min[jj];
+          }
+          // std::cout << "Seeing x y z " << std::to_string(Xprev[ii](0)) << ", " << std::to_string(Xprev[ii](1)) << ",
+          // " << std::to_string(Xprev[ii](2)) << " and judging that " << std::to_string(jj) << " needs CONSTRAINT " <<
+          // std::to_string(lb) << ", " << std::to_string(ub) << "." << std::endl;
+        }
+        // lb < x < ub
+        linear_con_mat.coeffRef(row_idx, state_dim*ii + jj) = 1.0;
+        lower_bound(row_idx) = lb;
+        upper_bound(row_idx) = ub;
+        row_idx++;
       }
     }
+
+    // decimal_t ko_x_min = ko_min(0);
+    // decimal_t ko_x_max = ko_max(0);
+    // decimal_t ko_y_min = ko_min(1);
+    // decimal_t ko_y_max = ko_max(1);
+    // decimal_t ko_center_x = (ko_x_max + ko_x_min)/2;
+    // decimal_t ko_center_y = (ko_y_max + ko_y_min)/2;
+    // std::cout << "ko_center_x: " << ko_center_x << std::endl;
+    // std::cout << "ko_center_y: " << ko_center_y << std::endl;
+    // for (size_t ii = 0; ii < N-1; ii++) {
+    //   for (size_t kk = 0; kk < 2; kk++) {  // x and y
+    //     size_t d_slack_var_idx = state_dim*N+control_dim*(N-1)+
+    //     num_force_norm_slack_vars+num_moment_norm_slack_vars+
+    //     state_bd_dim*(N-1)+state_bd_dim*(N-1)+
+    //     (lin_vel_dim+1)*(N-1)+(ang_vel_dim+1)*(N-1)+2*ii+kk;
+    //     // -d_ik <= 0
+    //     linear_con_mat.coeffRef(row_idx, d_slack_var_idx) = -1.0;
+    //     upper_bound(row_idx) = 0;
+    //     row_idx++;
+    //     // Using prev, determine active constraints
+    //     decimal_t prev = Xprev[ii](kk);
+    //     if (prev > (ko_min(kk) + ko_max(kk)) / 2) {  // If x > ko_center_x, then -x + d_i <= -ko_x_max
+    //       linear_con_mat.coeffRef(row_idx, state_dim*(ii+1)+kk) = -1.0;
+    //       linear_con_mat.coeffRef(row_idx, d_slack_var_idx) = 1.0;
+    //       upper_bound(row_idx) = -ko_max(kk);
+    //       row_idx++;
+    //     } else {  // If x < ko_center_x, then x + d_i <= ko_x_min
+    //       linear_con_mat.coeffRef(row_idx, state_dim*(ii+1)+kk) = 1.0;
+    //       linear_con_mat.coeffRef(row_idx, d_slack_var_idx) = 1.0;
+    //       upper_bound(row_idx) = ko_min(kk);
+    //       row_idx++;
+    //     }
+    //   }
+    // }
   }
 }
 
