@@ -1060,8 +1060,10 @@ bool TOP::Solve() {
       SetSimpleCosts();
     } else {
       // Update constraints and costs
-      UpdateSimpleConstraints();
-      UpdateSimpleCosts();
+      // UpdateSimpleConstraints();
+      // UpdateSimpleCosts();
+      SetSimpleConstraints();
+      SetSimpleCosts();
     }
 
     // UpdateTrustRegionCons();
