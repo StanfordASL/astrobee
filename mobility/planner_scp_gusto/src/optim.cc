@@ -40,6 +40,7 @@ TOP::TOP(decimal_t Tf_, int N_)
   dh = Tf / N;
 
   // TODO(somrita): Implement all of these
+  is_granite = true;
   enforce_init_cond = true;
   enforce_final_cond = true;
   enforce_lin_dynamics = true;

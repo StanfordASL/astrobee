@@ -48,6 +48,7 @@ class TOP {
   decimal_t dh;
   decimal_t Tf;
 
+  bool is_granite;
   bool enforce_init_cond;
   bool enforce_final_cond;
   bool enforce_lin_dynamics;

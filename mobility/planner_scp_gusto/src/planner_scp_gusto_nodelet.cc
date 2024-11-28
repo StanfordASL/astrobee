@@ -381,6 +381,11 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
       top->pos_max_(ii) = max(ii);
     }
 
+    if (top->is_granite) {
+      top->pos_min_(2) = -0.675;
+      top->pos_max_(2) = -0.67;
+    }
+
     if (keep_in_zones_.size() == 0) {
       ROS_ERROR("Zero keepin zones!! Plan failed");
       return false;
