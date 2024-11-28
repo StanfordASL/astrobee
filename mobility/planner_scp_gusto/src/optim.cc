@@ -1396,8 +1396,8 @@ void TOP::ValidationChecks() {
       Eigen::Vector3d pos = Xprev[ii].segment(0, 3);
       if ((pos.array() >= ko_min.array()).all() && (pos.array() <= ko_max.array()).all()) {
         violated = true;
-        std::cout << "Obstacle avoidance constraint:    FAILED" 
-          << "\t at t=" << ii << ", pos=" << pos.transpose() << std::endl;
+        std::cout << "Obstacle avoidance constraint:    FAILED"
+                  << "\t at t=" << ii << ", pos=" << pos.transpose() << std::endl;
         break;
       }
     }
