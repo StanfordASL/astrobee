@@ -1367,7 +1367,29 @@ void TOP::ValidationChecks() {
   std::cout << "Ang vel constraint:               " << result_angvel_cons
     << "\tMax violation:" << max_resid_angvel << std::endl;
 
-  // TODO(somrita): Add checks for trust region and obstacle avoidance constraints
+  // // Check obstacle avoidance constraints
+  if (keep_out_zones_.size() != 1) {
+    std::cout << "Obstacle avoidance constraint:    NOT CHECKED" << std::endl;
+  } else {
+    Eigen::AlignedBox3d box = keep_out_zones_[0];
+    Eigen::Vector3d ko_min = box.min();
+    Eigen::Vector3d ko_max = box.max();
+    bool violated = false;
+    for (size_t ii = 0; ii < N-1; ii++) {
+      Eigen::Vector3d pos = Xprev[ii].segment(0, 3);
+      if ((pos.array() >= ko_min.array()).all() && (pos.array() <= ko_max.array()).all()) {
+        violated = true;
+        std::cout << "Obstacle avoidance constraint:    FAILED" 
+          << "\t at t=" << ii << ", pos=" << pos.transpose() << std::endl;
+        break;
+      }
+    }
+    if (!violated) {
+      std::cout << "Obstacle avoidance constraint:    PASSED" << std::endl;
+    }
+  }
+
+  // TODO(somrita): Add checks for trust region
   std::cout << std::endl;
 }
 
