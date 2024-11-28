@@ -154,6 +154,7 @@ size_t TOP::GetNumTOPVariables() {
          + state_bd_dim * (N - 1)       // State UB slack variables
          + (lin_vel_dim + 1) * (N - 1)  // Linear velocity norm slack variables
          + (ang_vel_dim + 1) * (N - 1);  // Angular velocity norm slack variables
+        //  + 3 * (N - 1);                 // Obstacle avoidance binary variables
         //  + 2 * (N - 1);                 // Obstacle avoidance slack variables
 }
 
@@ -685,8 +686,23 @@ void TOP::SetSimpleConstraints() {
                                std::to_string(keep_out_zones_.size()));
     }
     Eigen::AlignedBox3d box = keep_out_zones_[0];
-    Eigen::Vector3d ko_min = box.min();
-    Eigen::Vector3d ko_max = box.max();
+    Eigen::Vector3d ko_min_original = box.min();
+    Eigen::Vector3d ko_max_original = box.max();
+    std::cout << "original ko_min: " << ko_min_original.transpose() << std::endl;
+    std::cout << "original ko_max: " << ko_max_original.transpose() << std::endl;
+    // Add buffer to obstacle
+    Eigen::Vector3d ko_min = ko_min_original - Eigen::Vector3d(obs_clearance, obs_clearance, obs_clearance);
+    Eigen::Vector3d ko_max = ko_max_original + Eigen::Vector3d(obs_clearance, obs_clearance, obs_clearance);
+
+    // Clip ko_min and ko_max to be within pos_min_ and pos_max_
+    ko_min = ko_min.cwiseMax(pos_min_);  // clip ko_min to be >= pos_min_
+    ko_max = ko_max.cwiseMin(pos_max_);  // clip ko_max to be <= pos_max_
+
+    // Print pos_min_ and pos_max_
+    std::cout << "pos_min_: " << pos_min_.transpose() << std::endl;
+    std::cout << "pos_max_: " << pos_max_.transpose() << std::endl;
+
+    // Print updated ko_min and ko_max
     std::cout << "ko_min: " << ko_min.transpose() << std::endl;
     std::cout << "ko_max: " << ko_max.transpose() << std::endl;
     Eigen::Vector3d ko_center = (ko_min + ko_max)/2;
