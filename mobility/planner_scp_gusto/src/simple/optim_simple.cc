@@ -150,7 +150,7 @@ void TOPSimp::SetObsCons() {
   // Set obstacle constraints (just a box in the center)
   std::cout << "Setting obstacle constraints..." << std::endl;
   Eigen::AlignedBox3d obstacle(Eigen::Vector3d(-1.0, 0.5, 0.0),
-                               Eigen::Vector3d(1.0, 1.5, 0.0));
+                               Eigen::Vector3d(1.2, 1.5, 0.0));
   keep_out_zones_.push_back(obstacle);
 }
 
@@ -187,7 +187,7 @@ bool TOPSimp::Solve() {
   bool enforce_init_final_cond = true;
   bool enforce_lin_dynamics = true;
   bool enforce_control_bounds = true;
-  bool enforce_obs_const = false;
+  bool enforce_obs_const = true;
   SetBoundaryCons();
   SetObsCons();
   InitTrajStraightline();
@@ -357,52 +357,6 @@ bool TOPSimp::Solve() {
     std::cerr << "Error: Lower bound and upper bound vectors do not have the correct size!" << std::endl;
     return false;
   }
-  // // Check that lower bounds are less than or equal to upper bounds
-  // if ((lower_bound.array() > upper_bound.array()).any()) {
-  //   std::cerr << "Error: Lower bounds are not less than or equal to upper bounds!" << std::endl;
-  //   // print which lower bound is greater than upper bound
-  //   // find which lower bound is greater than upper bound
-  //   for (size_t i = 0; i < total_constraints; ++i) {
-  //     if (lower_bound[i] > upper_bound[i]) {
-  //       std::cerr << " num of init final " << init_final_boundary_constraints << std::endl;
-
-  //       std::cerr << "Lower bound: " << lower_bound[i] << " Upper bound: " << upper_bound[i] << std::endl;
-  //       size_t temp_i = i;
-  //       if ((0 <= temp_i) && (temp_i < init_final_boundary_constraints)) {
-  //         std::cerr << "Init final constraint" << i << std::endl;
-  //       } else{
-  //         temp_i -= init_final_boundary_constraints;
-  //         if ((0 <= temp_i) && (temp_i < lin_dynamics_constraints)) {
-  //           std::cerr << "Lin dynamics constraint" << i << std::endl;
-  //         } else {
-  //           temp_i -= lin_dynamics_constraints;
-  //           if ((0 <= temp_i) && (temp_i < bounded_control_constraints)) {
-  //             std::cerr << "Bounded control constraint" << i << std::endl;
-  //           } else {
-  //             temp_i -= bounded_control_constraints;
-  //             if ((0 <= temp_i) && (temp_i < obstacle_constraints)) {
-  //               std::cerr << "Obstacle constraint" << i << std::endl;
-  //             }
-  //           }
-  //         }
-  //       }
-
-  //     }
-  //   }
-  //   return false;
-  // }
-
-  // // Add obstacle avoidance constraints for each time step
-  // int obstacle_row = init_final_boundary_constraints + lin_dynamics_constraints + bounded_control_constraints;
-  // for (size_t i = 0; i < N; ++i) {
-  //   Vec3 point = Xprev[i].head<3>();  // Extract the position (first 3 elements)
-  //   if (IsInsideObstacle(point)) {
-  //     A.insert(obstacle_row, i * 13) = -1.0; // Penalty for being inside the obstacle
-  //     lower_bound[obstacle_row] = obs_clearance;  // Minimum clearance required
-  //     upper_bound[obstacle_row] = std::numeric_limits<double>::infinity();
-  //     ++obstacle_row;
-  //   }
-  // }
 
   solver.data()->setNumberOfVariables(N * 13 + (N - 1) * 6);
   solver.data()->setNumberOfConstraints(A.rows());
