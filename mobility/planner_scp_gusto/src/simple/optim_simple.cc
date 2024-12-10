@@ -146,43 +146,6 @@ int TOPSimp::AddControlLimits(size_t offset) {
   return num_constraints;
 }
 
-
-
-// void TOPSimp::AddLinearDynamicsWithControls() {
-//   std::cout << "Adding linear dynamics with controls..." << std::endl;
-//   std::vector<Eigen::Triplet<double>> dynamics_triplets;
-
-//   size_t row_offset = 2 * 13;  // After boundary constraints
-//   for (size_t i = 0; i < N - 1; ++i) {
-//     for (size_t j = 0; j < 13; ++j) {
-//       // Dynamics: x_{i+1} = A * x_i + B * u_i
-//       dynamics_triplets.emplace_back(row_offset + j, i * 13 + j, -1.0);  // -A * x_i
-//       dynamics_triplets.emplace_back(row_offset + j, (i + 1) * 13 + j, 1.0);  // x_{i+1}
-//     }
-//     for (size_t j = 0; j < 6; ++j) {
-//       dynamics_triplets.emplace_back(row_offset + j, N * 13 + i * 6 + j, -1.0);  // -B * u_i
-//     }
-//     row_offset += 13;
-//   }
-
-//   // Add dynamics constraints to A matrix
-//   for (const auto& triplet : dynamics_triplets) {
-//     A.insert(triplet.row(), triplet.col()) = triplet.value();
-//   }
-
-//   // Set bounds for equality (zero for dynamics constraints)
-//   for (size_t i = 2 * 13; i < row_offset; ++i) {
-//     lower_bound[i] = 0.0;
-//     upper_bound[i] = 0.0;
-//   }
-
-//   // Add control bounds (-1 <= u_i <= 1)
-//   for (size_t i = 0; i < (N - 1) * 6; ++i) {
-//     lower_bound[2 * 13 + (N - 1) * 13 + i] = -1.0;
-//     upper_bound[2 * 13 + (N - 1) * 13 + i] = 1.0;
-//   }
-// }
-
 void TOPSimp::SetObsCons() {
   // Set obstacle constraints (just a box in the center)
   std::cout << "Setting obstacle constraints..." << std::endl;
