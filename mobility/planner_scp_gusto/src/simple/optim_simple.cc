@@ -234,8 +234,18 @@ bool TOPSimp::Solve() {
   int num_controls = 6;
 
   H = Eigen::SparseMatrix<double>(N * num_states + (N - 1) * num_controls, N * num_states + (N - 1) * num_controls);
-  H.setIdentity();
-  H *= 0.1;  // Example weight
+  // Weights for control effort minimization
+  double control_weight = 1.0;
+  std::vector<Eigen::Triplet<double>> hessian_triplets;
+  // Penalize control inputs (u1, u2, u3)
+  for (size_t i = 0; i < (N - 1); ++i) {
+    for (size_t j = 0; j < 3; ++j) {
+      size_t idx = N * num_states + i * num_controls + j;
+      hessian_triplets.emplace_back(idx, idx, control_weight);
+    }
+  }
+  H.setFromTriplets(hessian_triplets.begin(), hessian_triplets.end());
+
 
   gradient = Eigen::VectorXd::Zero(N * num_states + (N - 1) * num_controls);
 
@@ -464,7 +474,7 @@ bool TOPSimp::Solve() {
 
 int main() {
   scp::TOPSimp top(10.0, 50);
-  top.x0 << -2, -2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0;
+  top.x0 << -1, -2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0;
   top.xg << 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0;
   if (!top.Solve()) return -1;
   return 0;
