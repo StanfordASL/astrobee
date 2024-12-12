@@ -366,10 +366,10 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
     }
     bool add_custom_keep_out_zone = true;
     if (add_custom_keep_out_zone) {
-      Eigen::AlignedBox3d temp;
-      temp.extend(Eigen::Vector3d(-0.1, -0.1, -2));
-      temp.extend(Eigen::Vector3d(0.1, 0.1, 0));
-      keep_out_zones_.push_back(temp);
+      Eigen::AlignedBox3d smallObstacle;
+      smallObstacle.extend(Eigen::Vector3d(-0.25, 0., -2));
+      smallObstacle.extend(Eigen::Vector3d(0., -0.25, 0));
+      keep_out_zones_.push_back(smallObstacle);
     }
 
     std::cout << "# of keepin zones: " << keep_in_zones_.size() << std::endl;

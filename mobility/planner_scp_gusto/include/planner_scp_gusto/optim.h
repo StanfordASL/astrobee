@@ -43,6 +43,7 @@ class TOP {
   size_t control_dim_nlin;
   size_t state_bd_dim;
   size_t pos_dim;
+  size_t quat_dim;
   size_t lin_vel_dim;
   size_t ang_vel_dim;
   size_t N;
@@ -179,6 +180,7 @@ class TOP {
   void UpdateA(Mat7& A, Vec13& X, Vec6& U);
   void UpdateB(Mat7x3& B, Vec13& X, Vec6& U);
   void UpdateRotationalDynamics();
+  Mat4x3 calculateQMat(const Vec4& quaternion);
 
   void SetHessianMatrix();
   void SetGradient();

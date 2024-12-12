@@ -35,6 +35,7 @@ TOP::TOP(decimal_t Tf_, int N_)
   state_bd_dim = 7;
   pos_dim = 3;
   lin_vel_dim = 3;
+  quat_dim = 4;
   ang_vel_dim = 3;
   control_dim = 6;
   control_dim_lin = 3;
@@ -46,7 +47,7 @@ TOP::TOP(decimal_t Tf_, int N_)
   enforce_init_cond = true;
   enforce_final_cond = true;
   enforce_lin_dynamics = true;
-  enforce_rot_dynamics = false;
+  enforce_rot_dynamics = true;
   enforce_force_norm = false;
   enforce_moment_norm = false;
   enforce_state_LB = false;
@@ -336,7 +337,12 @@ void TOP::InitTrajStraightline() {
   // http://wiki.ros.org/tf2/Tutorials/Quaternions#Components_of_a_quaternion
   Quat q0 = Quat(x0(9), x0(6), x0(7), x0(8));
   Quat qg = Quat(xg(9), xg(6), xg(7), xg(8));
-
+  std::cout << "x0: " << x0(0) << " " << x0(1) << " " << x0(2) << " " << x0(3) << " " << x0(4) << " " << x0(5) << " "
+            << x0(6) << " " << x0(7) << " " << x0(8) << " " << x0(9) << " " << x0(10) << " " << x0(11) << " " << x0(12)
+            << std::endl;
+  std::cout << "xg: " << xg(0) << " " << xg(1) << " " << xg(2) << " " << xg(3) << " " << xg(4) << " " << xg(5) << " "
+            << xg(6) << " " << xg(7) << " " << xg(8) << " " << xg(9) << " " << xg(10) << " " << xg(11) << " " << xg(12)
+            << std::endl;
   std::cout << "q0: " << q0.x() << " " << q0.y() << " " << q0.z() << " " << q0.w() << std::endl;
   std::cout << "qg: " << qg.x() << " " << qg.y() << " " << qg.z() << " " << qg.w() << std::endl;
 
@@ -356,6 +362,92 @@ void TOP::InitTrajStraightline() {
     }
   }
   WriteTrajectoryToFile(Xprev, Uprev, "initial_straight_line_trajectory.txt");
+}
+
+// void TOP::UpdateF(Vec7& f, Vec13& X, Vec6& U) {
+//   f.setZero();
+
+//   decimal_t Jxx = J(0, 0);
+//   decimal_t Jyy = J(1, 1);
+//   decimal_t Jzz = J(2, 2);
+
+//   decimal_t wx = X(10);
+//   decimal_t wy = X(11);
+//   decimal_t wz = X(12);
+
+//   Vec3 negJinvOmegaJomega;
+//   negJinvOmegaJomega << (Jyy-Jzz)*wz*wy/Jxx,
+//                         (Jzz-Jxx)*wx*wz/Jyy,
+//                         (Jxx-Jyy)*wy*wx/Jzz;
+
+//   f.segment(4, 3) = negJinvOmegaJomega;
+// }
+
+// void TOP::UpdateA(Mat7& A, Vec13& X, Vec6& U) {
+//   A.setZero();
+
+//   decimal_t wx = X(10);
+//   decimal_t wy = X(11);
+//   decimal_t wz = X(12);
+
+//   Mat4 df_dq;
+//   df_dq << 0, -wz, wy, wx,
+//                 wz, 0, -wx, wy,
+//                 -wy, wx, 0, wz,
+//                 -wx, -wy, -wz, 0;
+//   A.block(0, 0, 4, 4) = 0.5*df_dq;
+// }
+
+// void TOP::UpdateB(Mat7x3& B, Vec13& X, Vec6& U) {
+//   B.setZero();
+
+//   B.block(4, 0, 3, 3) = Jinv;
+// }
+
+// void TOP::UpdateRotationalDynamics() {
+//   // re-normalize quaternions between iterations
+//   NormalizeQuaternions();
+
+//   for (size_t ii = 0; ii < N-1; ii++) {
+//     UpdateF(fs[ii], Xprev[ii], Uprev[ii]);
+//     UpdateA(As[ii], Xprev[ii], Uprev[ii]);
+//     UpdateB(Bs[ii], Xprev[ii], Uprev[ii]);
+//   }
+// }
+
+// Eigen::Matrix<double, 4, 3> TOP::calculateQMat(const Eigen::Vector4d& quaternion) {
+//     // Extract quaternion components
+//     double q_w = quaternion(0);
+//     double q_x = quaternion(1);
+//     double q_y = quaternion(2);
+//     double q_z = quaternion(3);
+
+//     // Construct Q_mat
+//     Eigen::Matrix<double, 4, 3> Q_mat;
+//     Q_mat << -q_x, -q_y, -q_z,
+//               q_w, -q_z,  q_y,
+//               q_z,  q_w, -q_x,
+//              -q_y,  q_x,  q_w;
+
+//     return Q_mat;
+// }
+
+// Function to calculate Q_mat
+Mat4x3 TOP::calculateQMat(const Vec4& quaternion) {
+    // Extract quaternion components
+    double q_x = quaternion(0);
+    double q_y = quaternion(1);
+    double q_z = quaternion(2);
+    double q_w = quaternion(3);  // Last element is q_w
+
+    // Construct Q_mat
+    Mat4x3 Q_mat;
+    Q_mat << -q_x, -q_y, -q_z,
+              q_w, -q_z,  q_y,
+              q_z,  q_w, -q_x,
+             -q_y,  q_x,  q_w;
+
+    return Q_mat;
 }
 
 void TOP::SetSimpleConstraints() {
@@ -424,46 +516,102 @@ void TOP::SetSimpleConstraints() {
     }
   }
 
+  // if (enforce_rot_dynamics) {
+  //   UpdateRotationalDynamics();
+  //   for (size_t ii = 0; ii < N-1; ii++) {
+  //     // Nonlinear attitude dynamics
+  //     // q[ii+1] = q[ii] + dh*As.block(0,0,4,4)*q[ii]
+  //     // omega[ii+1] = omega[ii] + dh*Bs.block(4,4,3,3)*u[ii] + dh*fs.segment(4,3)
+  //     // ==> x[ii+1] = x[ii] + dh*As*x[ii] + dh*Bs*u[ii] + dh*fs
+  //     // ==> -dh*fs = -x[ii+1] + (eye + dh*As)*x[ii] + dh*Bs*u[ii]
+  //     // As[ii] is a 7x7 matrix
+  //     // Bs[ii] is a 7x3 matrix
+  //     // fs[ii] is a 7x1 vector
+  //     // As.block(0,0,4,4) is a 4x4 matrix (rest is zeros)
+  //     // Bs.block(4,0,3,3) is a 3x3 matrix  (rest is zeros)
+  //     // fs.segment(4,3) is a 3x1 vector (rest is zeros)
+
+  //     for (size_t jj = 0; jj < state_dim_nlin; jj++) {
+  //       lower_bound(row_idx) = -dh*fs[ii](jj);
+  //       upper_bound(row_idx) = -dh*fs[ii](jj);
+
+  //       // Simple explicit Euler integration scheme
+  //       linear_con_mat.coeffRef(row_idx, state_dim*(ii+1)+state_dim_lin+jj) = -1.0;
+  //       for (size_t kk = 0; kk < state_dim_nlin; kk++) {
+  //         linear_con_mat.coeffRef(row_idx, state_dim*ii+state_dim_lin+kk) =
+  //           (eye(jj, kk)+dh*As[ii](jj, kk) );
+  //       }
+  //       for (size_t kk = 0; kk < control_dim_nlin; kk++) {
+  //         linear_con_mat.coeffRef(row_idx,
+  //           state_dim*N+control_dim*ii+control_dim_lin+kk) = dh*Bs[ii](jj, kk);
+  //       }
+  //       row_idx++;
+  //     }
+  //     if (ii == 0) {
+  //       std::cout << "Rotational constraints matrix As part: \n"
+  //                 << As[ii] << std::endl;
+  //       std::cout << "Rotational constraints matrix Bs part: \n"
+  //                 << Bs[ii] << std::endl;
+  //       std::cout << "Rotational constraints matrix fs part: \n"
+  //                 << fs[ii] << std::endl;
+  //     }
+  //   }
+  // }
+
   if (enforce_rot_dynamics) {
-    for (size_t ii = 0; ii < N-1; ii++) {
-      // Nonlinear attitude dynamics
-      // q[ii+1] = q[ii] + dh*As.block(0,0,4,4)*q[ii]
-      // omega[ii+1] = omega[ii] + dh*Bs.block(4,4,3,3)*u[ii] + dh*fs.segment(4,3)
-      // ==> x[ii+1] = x[ii] + dh*As*x[ii] + dh*Bs*u[ii] + dh*fs
-      // ==> -dh*fs = -x[ii+1] + (eye + dh*As)*x[ii] + dh*Bs*u[ii]
-      // As[ii] is a 7x7 matrix
-      // Bs[ii] is a 7x3 matrix
-      // fs[ii] is a 7x1 vector
-      // As.block(0,0,4,4) is a 4x4 matrix (rest is zeros)
-      // Bs.block(4,0,3,3) is a 3x3 matrix  (rest is zeros)
-      // fs.segment(4,3) is a 3x1 vector (rest is zeros)
+    NormalizeQuaternions();
+    std::vector<Eigen::Triplet<double>> dynamics_triplets;
+    for (size_t ii = 0; ii < N - 1; ii++) {
+        // Quaternion kinematics update
+        for (size_t jj = 0; jj < 4; jj++) {
+            for (size_t kk = 0; kk < 3; kk++) {
+                // Quaternion update: q_{i+1} = q_i + 0.5 * Q(q_i) * omega_i * dt
 
-      for (size_t jj = 0; jj < state_dim_nlin; jj++) {
-        lower_bound(row_idx) = -dh*fs[ii](jj);
-        upper_bound(row_idx) = -dh*fs[ii](jj);
+                // Compute QMat dynamically for quaternion at time step `ii`
+                Eigen::Vector4d q_i = Xprev[ii].segment(6, 4);
+                // Eigen::Vector4d q_i = X.segment<4>(ii * state_dim + pos_dim + lin_vel_dim);
+                Eigen::Matrix<double, 4, 3> QMat = calculateQMat(q_i);
 
-        // Simple explicit Euler integration scheme
-        linear_con_mat.coeffRef(row_idx, state_dim*(ii+1)+state_dim_lin+jj) = -1.0;
-        for (size_t kk = 0; kk < state_dim_nlin; kk++) {
-          linear_con_mat.coeffRef(row_idx, state_dim*ii+state_dim_lin+kk) =
-            (eye(jj, kk)+dh*As[ii](jj, kk) );
+                dynamics_triplets.emplace_back(row_idx, ii * state_dim + pos_dim + lin_vel_dim + jj, -1.0);  // -q_i
+                dynamics_triplets.emplace_back(row_idx, ii * state_dim + pos_dim + lin_vel_dim + quat_dim + kk,
+                                               -0.5 * dh * QMat(jj, kk));  // -0.5 * Q_mat * omega_i * dt
+                dynamics_triplets.emplace_back(row_idx, (ii + 1) * state_dim + pos_dim + lin_vel_dim + jj,
+                                               1.0);  // q_{i+1}
+            }
+            // Enforce quaternion normalization at time step `ii+1`
+            if (jj == 3) {  // After processing all quaternion components
+              decimal_t q_norm = Xprev[ii+1].segment(6, 4).norm();
+              if (q_norm > 1e-6) {
+                Xprev[ii].segment(6, 4) /= q_norm;
+              }
+            }
+            lower_bound(row_idx) = 0.0;
+            upper_bound(row_idx) = 0.0;
+            ++row_idx;
         }
-        for (size_t kk = 0; kk < control_dim_nlin; kk++) {
-          linear_con_mat.coeffRef(row_idx,
-            state_dim*N+control_dim*ii+control_dim_lin+kk) = dh*Bs[ii](jj, kk);
+
+        // Angular velocity update
+        for (size_t jj = 0; jj < 3; jj++) {
+            // omega_{i+1} = omega_i + J^{-1} * (u_torque - omega_i cross (J * omega_i)) * dt
+            dynamics_triplets.emplace_back(row_idx, ii * state_dim + pos_dim + lin_vel_dim + quat_dim + jj,
+                                           -1.0);  // -omega_i
+            dynamics_triplets.emplace_back(row_idx, N * state_dim + ii * control_dim + control_dim_lin + jj,
+                                           -dh / J(jj, jj));  // -u_torque * dt / J
+            dynamics_triplets.emplace_back(row_idx, (ii + 1) * state_dim + pos_dim + lin_vel_dim + quat_dim + jj,
+                                           1.0);  // omega_{i+1}
+
+            lower_bound(row_idx) = 0.0;
+            upper_bound(row_idx) = 0.0;
+            ++row_idx;
         }
-        row_idx++;
-      }
-      if (ii == 0) {
-        std::cout << "Rotational constraints matrix As part: \n"
-                  << As[ii] << std::endl;
-        std::cout << "Rotational constraints matrix Bs part: \n"
-                  << Bs[ii] << std::endl;
-        std::cout << "Rotational constraints matrix fs part: \n"
-                  << fs[ii] << std::endl;
-      }
+    }
+
+    // Add rotational dynamics constraints to A matrix
+    for (const auto& triplet : dynamics_triplets) {
+        linear_con_mat.coeffRef(triplet.row(), triplet.col()) = triplet.value();
     }
   }
+
 
   if (enforce_force_norm) {
     // Force constraints
@@ -864,7 +1012,7 @@ void TOP::SetSimpleCosts() {
   std::vector<Eigen::Triplet<double>> hessian_triplets;
   // Penalize control inputs (u1, u2, u3)
   for (size_t ii = 0; ii < (N - 1); ++ii) {
-    for (size_t jj = 0; jj < control_dim_lin; ++jj) {
+    for (size_t jj = 0; jj < control_dim; ++jj) {
       size_t idx = N * state_dim + ii * control_dim + jj;
       hessian_triplets.emplace_back(idx, idx, control_weight);
     }
@@ -996,7 +1144,7 @@ bool TOP::Solve() {
       Uprev[ii] = qp_soln.block(state_dim*N + control_dim*ii, 0, control_dim, 1);
     }
 
-    // NormalizeQuaternions();
+    NormalizeQuaternions();
 
     ValidationChecks();
 
@@ -1267,13 +1415,15 @@ void TOP::ValidationChecks() {
   std::cout << std::endl;
 }
 
-// void TOP::NormalizeQuaternions() {
-//   // re-normalize quaternions
-//   for (size_t ii = 0; ii < N; ii++) {
-//     decimal_t q_norm = Xprev[ii].segment(6, 4).norm();
-//     Xprev[ii].segment(6, 4) /= q_norm;
-//   }
-// }
+void TOP::NormalizeQuaternions() {
+  // re-normalize quaternions
+  for (size_t ii = 0; ii < N; ii++) {
+    decimal_t q_norm = Xprev[ii].segment(6, 4).norm();
+    if (q_norm > 1e-6) {
+      Xprev[ii].segment(6, 4) /= q_norm;
+    }
+  }
+}
 
 void TOP::PolishSolution() {
   if (!solved_) {
@@ -2084,6 +2234,14 @@ void TOP::WriteTrajectoryToFile(const Vec13Vec& states, const Vec6Vec& controls,
 
 }  //  namespace scp
 
+// Generalized function to set all elements in a vector to zero
+template <typename VecType>
+void clearToZeros(std::vector<VecType, Eigen::aligned_allocator<VecType>>& vec) {
+    for (auto& elem : vec) {
+      elem.setZero();  // Set each element to zero
+    }
+}
+
 // Function to initialize motion cases
 std::vector<scp::Vec13> initializeMotionCases() {
     std::vector<scp::Vec13> xgs;
@@ -2106,6 +2264,21 @@ std::vector<scp::Vec13> initializeMotionCases() {
     xg << 0.5, -0.3, -0.67, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
     xgs.push_back(xg);
 
+    // Case 5: Rotation in place CCW about Z
+    // (angle-axis) (-1.57 0 0 1) --> Quat x y z w (0 0 -0.7068252 0.7073883)
+    xg << -0.4, 0.4, -0.67, 0, 0, 0, 0, 0, -0.7068252, 0.7073883, 0, 0, 0;
+    xgs.push_back(xg);
+
+    // Case 6: Rotation in place CW about Z
+    // (angle-axis) (1.57 0 0 1) --> Quat x y z w (0 0 0.7068252 0.7073883)
+    xg << -0.4, 0.4, -0.67, 0, 0, 0, 0, 0, 0.7068252, 0.7073883, 0, 0, 0;
+    xgs.push_back(xg);
+
+    // // Case 7: Rotation of 180 deg in place about Z
+    // (angle-axis) (3.13 0 0 1) --> Quat x y z w (0 0 0.9999832, 0.0057963)
+    xg << -0.4, 0.4, -0.67, 0, 0, 0, 0, 0, 0.9999832, 0.0057963, 0, 0, 0;
+    xgs.push_back(xg);
+
     return xgs;
 }
 
@@ -2113,6 +2286,8 @@ std::vector<scp::Vec13> initializeMotionCases() {
 void processProblemInstance(scp::TOP &top_eg, const scp::Vec13 &xg, const Eigen::AlignedBox3d &vbox, int problemIndex) {
     top_eg.x0 << -0.4, 0.4, -0.67, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
     top_eg.xg = xg;
+    clearToZeros(top_eg.Xprev);
+    clearToZeros(top_eg.Uprev);
 
     if (vbox.isEmpty()) {
         top_eg.keep_out_zones_.clear();
@@ -2146,7 +2321,7 @@ void processProblemInstance(scp::TOP &top_eg, const scp::Vec13 &xg, const Eigen:
 }
 
 int main() {
-    scp::TOP top_eg(20., 101);
+    scp::TOP top_eg(20., 801);
 
     // Set granite environment and bounds
     top_eg.is_granite = true;
