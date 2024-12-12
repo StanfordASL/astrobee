@@ -42,7 +42,7 @@ TOP::TOP(decimal_t Tf_, int N_)
   dh = Tf / N;
 
   // TODO(somrita): Implement all of these
-  is_granite = true;
+  is_granite = false;
   enforce_init_cond = true;
   enforce_final_cond = true;
   enforce_lin_dynamics = true;
@@ -54,7 +54,7 @@ TOP::TOP(decimal_t Tf_, int N_)
   enforce_lin_vel_norm = false;
   enforce_ang_vel_norm = false;
   enforce_trust_region_const = false;
-  enforce_obs_avoidance_const = false;
+  enforce_obs_avoidance_const = true;
 
   penalize_total_force = false;
   penalize_total_moment = false;
@@ -166,19 +166,22 @@ size_t TOP::GetNumTOPConstraints() {
   size_t num_final_cond_constr = state_dim;
   size_t num_lin_dynamics_constr = state_dim_lin * (N - 1);   // (x,y,z) and (vx,vy,vz) for each time step
   size_t num_rot_dynamics_constr = state_dim_nlin * (N - 1);  // (q0,q1,q2,q3) and (wx,wy,wz) for each time step
+  size_t num_obs_avoidance_const = (N - 1) * pos_dim;               // Exactly 3 (XYZ) constraints per time step
   size_t num_total_constr = (enforce_init_cond ? num_init_cond_constr : 0) +
                            (enforce_final_cond ? num_final_cond_constr : 0) +
                            (enforce_lin_dynamics ? num_lin_dynamics_constr : 0) +
-                           (enforce_rot_dynamics ? num_rot_dynamics_constr : 0);
+                           (enforce_rot_dynamics ? num_rot_dynamics_constr : 0) +
+                           (enforce_obs_avoidance_const ? num_obs_avoidance_const : 0);
   if (enforce_force_norm || enforce_moment_norm || enforce_state_LB || enforce_state_UB || enforce_lin_vel_norm ||
-      enforce_ang_vel_norm || enforce_obs_avoidance_const) {
-    std::cerr << "Error: Constraints not implemented yet!" << std::endl;
+      enforce_ang_vel_norm) {
+    throw std::runtime_error("Error: Constraints not implemented yet!");
     return false;
   }
   std::cout << "Init cond: " << num_init_cond_constr << std::endl;
   std::cout << "Final cond: " << num_final_cond_constr << std::endl;
   std::cout << "Lin dynamics: " << num_lin_dynamics_constr << std::endl;
   std::cout << "Rot dynamics: " << num_rot_dynamics_constr << std::endl;
+  std::cout << "Obs avoidance: " << num_obs_avoidance_const << std::endl;
 
   // Print which constraints are enabled and corresponding number of constraints
   std::cout << "enforce_init_cond: " << enforce_init_cond << " (" << num_init_cond_constr << " constraints)"
@@ -189,6 +192,8 @@ size_t TOP::GetNumTOPConstraints() {
             << std::endl;
   std::cout << "enforce_rot_dynamics: " << enforce_rot_dynamics << " (" << num_rot_dynamics_constr << " constraints)"
             << std::endl;
+  std::cout << "enforce_obs_avoidance_const: " << enforce_obs_avoidance_const << " (" << num_obs_avoidance_const
+            << " constraints)" << std::endl;
   std::cout << "Total constraints: " << num_total_constr << std::endl;
 
   return num_total_constr;
@@ -719,6 +724,7 @@ void TOP::SetSimpleConstraints() {
 
   if (enforce_obs_avoidance_const) {
     if (keep_out_zones_.size() == 0) {
+      std::cout << "No keep out zones specified. Skipping obstacle avoidance constraints." << std::endl;
       return;
     }
     if (keep_out_zones_.size() > 1) {
@@ -2078,41 +2084,100 @@ void TOP::WriteTrajectoryToFile(const Vec13Vec& states, const Vec6Vec& controls,
 
 }  //  namespace scp
 
-int main() {
-  scp::TOP top_eg(20., 101);
-  scp::Vec13 xg;
-  std::vector<scp::Vec13> xgs;
-  // Case 2 : Motion in Y
-  scp::Vec13 xg2;
-  xg2 << -0.4, -0.4, -0.67, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
-  xgs.push_back(xg2);
-  // Case 1 : Motion in X
-  scp::Vec13 xg1;
-  xg1 << 0.4, 0.4, -0.67, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
-  xgs.push_back(xg1);
-  // Case 3 : Motion in XY
-  scp::Vec13 xg3;
-  xg3 << 0.4, -0.4, -0.67, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
-  xgs.push_back(xg3);
-  for (size_t i = 0; i < xgs.size(); ++i) {
+// Function to initialize motion cases
+std::vector<scp::Vec13> initializeMotionCases() {
+    std::vector<scp::Vec13> xgs;
+
+    scp::Vec13 xg;
+
+    // Case 2: Motion in Y
+    xg << -0.4, -0.4, -0.67, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+    xgs.push_back(xg);
+
+    // Case 1: Motion in X
+    xg << 0.4, 0.4, -0.67, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+    xgs.push_back(xg);
+
+    // Case 3: Motion in XY
+    xg << 0.4, -0.4, -0.67, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+    xgs.push_back(xg);
+
+    // Case 4: Asymmetric motion in XY
+    xg << 0.5, -0.3, -0.67, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+    xgs.push_back(xg);
+
+    return xgs;
+}
+
+// Function to process a single problem instance
+void processProblemInstance(scp::TOP &top_eg, const scp::Vec13 &xg, const Eigen::AlignedBox3d &vbox, int problemIndex) {
     top_eg.x0 << -0.4, 0.4, -0.67, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
-    top_eg.xg = xgs[i];
-    if (!top_eg.Solve()) {
-      std::cerr << "Error: Could not solve the problem!" << std::endl;
-      return -1;
+    top_eg.xg = xg;
+
+    if (vbox.isEmpty()) {
+        top_eg.keep_out_zones_.clear();
+    } else {
+        top_eg.keep_out_zones_.clear();
+        top_eg.keep_out_zones_.push_back(vbox);
     }
+
+    if (!top_eg.Solve()) {
+        std::string fname = "optim_trajectory_" + std::to_string(problemIndex) + ".txt";
+        scp::Vec13Vec empty_Xprev;
+        scp::Vec6Vec empty_Uprev;
+        top_eg.WriteTrajectoryToFile(empty_Xprev, empty_Uprev, fname);
+        std::cout << "Failure: Problem " << problemIndex << " could not be solved!" << std::endl;
+        std::cout << "--------------------------------------------" << std::endl;
+        return;
+    }
+
     Eigen::VectorXd solution = top_eg.solver->getSolution();
     for (size_t ii = 0; ii < top_eg.N; ii++) {
-      top_eg.Xprev[ii] = solution.segment(top_eg.state_dim*ii, top_eg.state_dim);
+        top_eg.Xprev[ii] = solution.segment(top_eg.state_dim * ii, top_eg.state_dim);
     }
-    for (size_t ii = 0; ii < top_eg.N-1; ii++) {
-      top_eg.Uprev[ii] = solution.segment(top_eg.state_dim*top_eg.N + top_eg.control_dim*ii, top_eg.control_dim);
+    for (size_t ii = 0; ii < top_eg.N - 1; ii++) {
+        top_eg.Uprev[ii] = solution.segment(top_eg.state_dim * top_eg.N + top_eg.control_dim * ii, top_eg.control_dim);
     }
-    std::string fname = "optim_trajectory_" + std::to_string(i+1) + ".txt";
+
+    std::string fname = "optim_trajectory_" + std::to_string(problemIndex) + ".txt";
     top_eg.WriteTrajectoryToFile(top_eg.Xprev, top_eg.Uprev, fname);
-    std::cout << "Success: Problem " << std::to_string(i + 1) << " out of " << std::to_string(xgs.size()) << " solved!"
-              << std::endl;
+    std::cout << "Success: Problem " << problemIndex << " solved!" << std::endl;
     std::cout << "--------------------------------------------" << std::endl;
-  }
-  return 0;
+}
+
+int main() {
+    scp::TOP top_eg(20., 101);
+
+    // Set granite environment and bounds
+    top_eg.is_granite = true;
+    if (top_eg.is_granite) {
+        top_eg.pos_min_(2) = -0.675;
+        top_eg.pos_max_(2) = -0.67;
+    }
+
+    // Initialize motion cases
+    std::vector<scp::Vec13> xgs = initializeMotionCases();
+
+    // Process problems without obstacles
+    for (size_t i = 0; i < xgs.size(); ++i) {
+        processProblemInstance(top_eg, xgs[i], Eigen::AlignedBox3d(), i + 1);
+    }
+
+    // Process problems with a large obstacle
+    Eigen::AlignedBox3d largeObstacle;
+    largeObstacle.extend(Eigen::Vector3d(-0.4, 0., -2));
+    largeObstacle.extend(Eigen::Vector3d(0., -0.4, 0));
+    for (size_t i = 0; i < xgs.size(); ++i) {
+        processProblemInstance(top_eg, xgs[i], largeObstacle, xgs.size() + i + 1);
+    }
+
+    // Process problems with a smaller obstacle
+    Eigen::AlignedBox3d smallObstacle;
+    smallObstacle.extend(Eigen::Vector3d(-0.25, 0., -2));
+    smallObstacle.extend(Eigen::Vector3d(0., -0.25, 0));
+    for (size_t i = 0; i < xgs.size(); ++i) {
+        processProblemInstance(top_eg, xgs[i], smallObstacle, 2 * xgs.size() + i + 1);
+    }
+
+    return 0;
 }
