@@ -42,6 +42,7 @@ class TOP {
   size_t control_dim_lin;
   size_t control_dim_nlin;
   size_t state_bd_dim;
+  size_t pos_dim;
   size_t lin_vel_dim;
   size_t ang_vel_dim;
   size_t N;
@@ -74,7 +75,7 @@ class TOP {
   bool lin_vel_strict;
   bool ang_vel_strict;
 
-  scp::BulletCollisionChecker cc;
+  // scp::BulletCollisionChecker cc;
 
   OsqpEigen::Solver* solver;
   decimal_t abs_tol_;
@@ -157,7 +158,7 @@ class TOP {
 
   TOP(decimal_t Tf, int N);
 
-  // ~TOP();
+  ~TOP();
 
   size_t GetNumTOPVariables();
   size_t GetNumTOPConstraints();
@@ -211,6 +212,7 @@ class TOP {
   void PolishSolution();
   void ValidationChecks();
   void NormalizeQuaternions();
+  void WriteTrajectoryToFile(const Vec13Vec& states, const Vec6Vec& controls, const std::string& filename);
 };
 
 }  //  namespace scp

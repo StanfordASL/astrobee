@@ -23,6 +23,7 @@
 #include <vector>
 #include <cmath>
 #include <string>
+#include <fstream>
 
 namespace scp {
 
@@ -32,6 +33,7 @@ TOP::TOP(decimal_t Tf_, int N_)
   state_dim_lin = 6;
   state_dim_nlin = 7;
   state_bd_dim = 7;
+  pos_dim = 3;
   lin_vel_dim = 3;
   ang_vel_dim = 3;
   control_dim = 6;
@@ -44,8 +46,8 @@ TOP::TOP(decimal_t Tf_, int N_)
   enforce_init_cond = true;
   enforce_final_cond = true;
   enforce_lin_dynamics = true;
-  enforce_rot_dynamics = true;
-  enforce_force_norm = true;
+  enforce_rot_dynamics = false;
+  enforce_force_norm = false;
   enforce_moment_norm = false;
   enforce_state_LB = false;
   enforce_state_UB = false;
@@ -139,39 +141,70 @@ TOP::TOP(decimal_t Tf_, int N_)
   }
 }
 
-// TOP::~TOP() {
-//   delete;
-// }
+TOP::~TOP() {
+  std::cout << "Destructor called" << std::endl;
+}
 
 size_t TOP::GetNumTOPVariables() {
   // TODO(somrita): Continue updating these
-  size_t num_force_norm_slack_vars = penalize_total_force ? (control_dim_lin+1)*(N-1) : control_dim_lin*(N-1);
-  size_t num_moment_norm_slack_vars = penalize_total_moment ? (control_dim_nlin+1)*(N-1) : control_dim_nlin*(N-1);
+  // size_t num_force_norm_slack_vars = penalize_total_force ? (control_dim_lin+1)*(N-1) : control_dim_lin*(N-1);
+  // size_t num_moment_norm_slack_vars = penalize_total_moment ? (control_dim_nlin+1)*(N-1) : control_dim_nlin*(N-1);
   return state_dim * N                  // State variables
-         + control_dim * (N - 1)        // Control variables
-         + num_force_norm_slack_vars    // Force norm slack variables
-         + num_moment_norm_slack_vars   // Moment norm slack variables
-         + state_bd_dim * (N - 1)       // State LB slack variables
-         + state_bd_dim * (N - 1)       // State UB slack variables
-         + (lin_vel_dim + 1) * (N - 1)  // Linear velocity norm slack variables
-         + (ang_vel_dim + 1) * (N - 1);  // Angular velocity norm slack variables
+         + control_dim * (N - 1);        // Control variables
+        //  + num_force_norm_slack_vars    // Force norm slack variables
+        //  + num_moment_norm_slack_vars   // Moment norm slack variables
+        //  + state_bd_dim * (N - 1)       // State LB slack variables
+        //  + state_bd_dim * (N - 1)       // State UB slack variables
+        //  + (lin_vel_dim + 1) * (N - 1)  // Linear velocity norm slack variables
+        //  + (ang_vel_dim + 1) * (N - 1);  // Angular velocity norm slack variables
         //  + 3 * (N - 1);                 // Obstacle avoidance binary variables
         //  + 2 * (N - 1);                 // Obstacle avoidance slack variables
 }
 
 size_t TOP::GetNumTOPConstraints() {
-  // TODO(somrita): Continue updating these
-  size_t num_force_norm_cons = penalize_total_force ? 11*(N-1) : 10*(N-1);
-  size_t num_moment_norm_cons = penalize_total_moment ? 11*(N-1) : 10*(N-1);
-  return state_dim*(N-1)  // Dynamics
-  + 2*state_dim  // Initial and final boundary conditions
-  + num_force_norm_cons  // Force norm constraints
-  + num_moment_norm_cons  // Moment norm constraints
-  + 2*state_bd_dim*(N-1)  // State LB constraints
-  + 2*state_bd_dim*(N-1)  // State UB constraints
-  + 11*(N-1)  // Linear velocity norm constraints
-  + 11*(N-1)  // Angular velocity norm constraints
-  + 3*(N-1);  // Obstacle avoidance constraints
+  size_t num_init_cond_constr = state_dim;
+  size_t num_final_cond_constr = state_dim;
+  size_t num_lin_dynamics_constr = state_dim_lin * (N - 1);   // (x,y,z) and (vx,vy,vz) for each time step
+  size_t num_rot_dynamics_constr = state_dim_nlin * (N - 1);  // (q0,q1,q2,q3) and (wx,wy,wz) for each time step
+  size_t num_total_constr = (enforce_init_cond ? num_init_cond_constr : 0) +
+                           (enforce_final_cond ? num_final_cond_constr : 0) +
+                           (enforce_lin_dynamics ? num_lin_dynamics_constr : 0) +
+                           (enforce_rot_dynamics ? num_rot_dynamics_constr : 0);
+  if (enforce_force_norm || enforce_moment_norm || enforce_state_LB || enforce_state_UB || enforce_lin_vel_norm ||
+      enforce_ang_vel_norm || enforce_obs_avoidance_const) {
+    std::cerr << "Error: Constraints not implemented yet!" << std::endl;
+    return false;
+  }
+  std::cout << "Init cond: " << num_init_cond_constr << std::endl;
+  std::cout << "Final cond: " << num_final_cond_constr << std::endl;
+  std::cout << "Lin dynamics: " << num_lin_dynamics_constr << std::endl;
+  std::cout << "Rot dynamics: " << num_rot_dynamics_constr << std::endl;
+
+  // Print which constraints are enabled and corresponding number of constraints
+  std::cout << "enforce_init_cond: " << enforce_init_cond << " (" << num_init_cond_constr << " constraints)"
+            << std::endl;
+  std::cout << "enforce_final_cond: " << enforce_final_cond << " (" << num_final_cond_constr << " constraints)"
+            << std::endl;
+  std::cout << "enforce_lin_dynamics: " << enforce_lin_dynamics << " (" << num_lin_dynamics_constr << " constraints)"
+            << std::endl;
+  std::cout << "enforce_rot_dynamics: " << enforce_rot_dynamics << " (" << num_rot_dynamics_constr << " constraints)"
+            << std::endl;
+  std::cout << "Total constraints: " << num_total_constr << std::endl;
+
+  return num_total_constr;
+
+  // // TODO(somrita): Continue updating these
+  // size_t num_force_norm_cons = penalize_total_force ? 11*(N-1) : 10*(N-1);
+  // size_t num_moment_norm_cons = penalize_total_moment ? 11*(N-1) : 10*(N-1);
+  // return state_dim*(N-1)  // Dynamics
+  // + 2*state_dim  // Initial and final boundary conditions
+  // + num_force_norm_cons  // Force norm constraints
+  // + num_moment_norm_cons  // Moment norm constraints
+  // + 2*state_bd_dim*(N-1)  // State LB constraints
+  // + 2*state_bd_dim*(N-1)  // State UB constraints
+  // + 11*(N-1)  // Linear velocity norm constraints
+  // + 11*(N-1)  // Angular velocity norm constraints
+  // + 3*(N-1);  // Obstacle avoidance constraints
 }
 
 void TOP::ResetSCPParams() {
@@ -233,9 +266,9 @@ void TOP::UpdateProblemDimension(size_t N_) {
   upper_bound.resize(num_cons);
   qp_soln.resize(num_vars);
 
-  UpdateDoubleIntegrator();
+  // UpdateDoubleIntegrator();
   InitTrajStraightline();
-  UpdateRotationalDynamics();
+  // UpdateRotationalDynamics();
 
   for (size_t ii = 0; ii < num_cons; ii++) {
     lower_bound(ii) = -OsqpEigen::INFTY;
@@ -248,8 +281,8 @@ void TOP::UpdateProblemDimension(size_t N_) {
   SetSimpleCosts();
 
   // Set up solver
-  abs_tol_ = 1e-3;  // default 1e-03
-  rel_tol_ = 1e-3;  // default 1e-03
+  abs_tol_ = 1e-5;  // default 1e-03
+  rel_tol_ = 1e-5;  // default 1e-03
   primal_tol_ = 1e-8;  // default 1e-04
   dual_tol_ = 1e-8;  // default 1e-04
   rho_ = 0.3;  // default 0.1
@@ -317,6 +350,7 @@ void TOP::InitTrajStraightline() {
       Uprev[ii](jj) = 0;
     }
   }
+  WriteTrajectoryToFile(Xprev, Uprev, "initial_straight_line_trajectory.txt");
 }
 
 void TOP::SetSimpleConstraints() {
@@ -332,32 +366,61 @@ void TOP::SetSimpleConstraints() {
 
   size_t row_idx = 0;
 
-  for (size_t ii = 0; ii < N-1; ii++) {
-    if (enforce_lin_dynamics) {
-      // Double integrator dynamics first
-      for (size_t jj = 0; jj < state_dim_lin; jj++) {
+  // Initial state
+  if (enforce_init_cond) {
+    for (size_t ii = 0; ii < state_dim; ii++) {
+      linear_con_mat.coeffRef(row_idx, ii) = 1.0;  // Constrain x[0][i] (initial state component)
+      lower_bound(row_idx) = x0(ii);
+      upper_bound(row_idx) = x0(ii);
+      row_idx++;
+    }
+  }
+
+  // Goal state
+  if (enforce_final_cond) {
+    for (size_t ii = 0; ii < state_dim; ii++) {
+      linear_con_mat.coeffRef(row_idx, state_dim * (N - 1) + ii) = 1.0;  // Constrain x[N-1][i] (final state component)
+      lower_bound(row_idx) = xg(ii);
+      upper_bound(row_idx) = xg(ii);
+      row_idx++;
+    }
+  }
+
+  if (row_idx != 2*state_dim) {
+    std::cerr << "Error: Expected " << 2 * state_dim << " constraints, but added " << row_idx << " constraints."
+              << std::endl;
+  }
+
+  if (enforce_lin_dynamics) {
+    std::vector<Eigen::Triplet<double>> dynamics_triplets;
+    for (size_t ii = 0; ii < N-1; ii++) {
+      // Double integrator dynamics
+      for (size_t jj = 0; jj < pos_dim; jj++) {
+        // Position update: x_{i+1} = x_i + v_i * dt
+        dynamics_triplets.emplace_back(row_idx, ii * state_dim + jj, -1.0);       // -x_i
+        dynamics_triplets.emplace_back(row_idx, ii * state_dim + pos_dim + jj, -dh);   // -v_i * dt
+        dynamics_triplets.emplace_back(row_idx, (ii + 1) * state_dim + jj, 1.0);  // x_{i+1}
         lower_bound(row_idx) = 0.0;
         upper_bound(row_idx) = 0.0;
+        ++row_idx;
 
-        linear_con_mat.coeffRef(row_idx, state_dim*(ii+1)+jj) = -1.0;
-        for (size_t kk = 0; kk < state_dim_lin; kk++) {
-          linear_con_mat.coeffRef(row_idx, state_dim*ii+kk) = Ak_di(jj, kk);
-        }
-
-        for (size_t kk = 0; kk < control_dim_lin; kk++) {
-          linear_con_mat.coeffRef(row_idx, state_dim*N+control_dim*ii+kk) = Bk_di(jj, kk);
-        }
-        row_idx++;
+        // Velocity update: v_{i+1} = v_i + u_j * dt / mass
+        dynamics_triplets.emplace_back(row_idx, ii * state_dim + pos_dim + jj, -1.0);       // -v_i
+        dynamics_triplets.emplace_back(row_idx, N * state_dim + ii * control_dim + jj, -dh/mass);    // -u_j * dt/mass
+        dynamics_triplets.emplace_back(row_idx, (ii + 1) * state_dim + pos_dim + jj, 1.0);  // v_{i+1}
+        lower_bound(row_idx) = 0.0;
+        upper_bound(row_idx) = 0.0;
+        ++row_idx;
       }
     }
-    if (ii == 0) {
-      std::cout << "Linear constraints matrix Ak_di part: \n"
-                << linear_con_mat.block(0, 0, state_dim_lin, state_dim_lin) << std::endl;
-      std::cout << "Linear constraints matrix Bk_di part: \n"
-                << linear_con_mat.block(0, state_dim * N, state_dim_lin, control_dim_lin) << std::endl;
+    // Add dynamics constraints to A matrix
+    for (const auto& triplet : dynamics_triplets) {
+      linear_con_mat.coeffRef(triplet.row(), triplet.col()) = triplet.value();
     }
+  }
 
-    if (enforce_rot_dynamics) {
+  if (enforce_rot_dynamics) {
+    for (size_t ii = 0; ii < N-1; ii++) {
       // Nonlinear attitude dynamics
       // q[ii+1] = q[ii] + dh*As.block(0,0,4,4)*q[ii]
       // omega[ii+1] = omega[ii] + dh*Bs.block(4,4,3,3)*u[ii] + dh*fs.segment(4,3)
@@ -386,37 +449,15 @@ void TOP::SetSimpleConstraints() {
         }
         row_idx++;
       }
+      if (ii == 0) {
+        std::cout << "Rotational constraints matrix As part: \n"
+                  << As[ii] << std::endl;
+        std::cout << "Rotational constraints matrix Bs part: \n"
+                  << Bs[ii] << std::endl;
+        std::cout << "Rotational constraints matrix fs part: \n"
+                  << fs[ii] << std::endl;
+      }
     }
-    if (ii == 0) {
-      std::cout << "Rotational constraints matrix As part: \n"
-                << As[ii] << std::endl;
-      std::cout << "Rotational constraints matrix Bs part: \n"
-                << Bs[ii] << std::endl;
-      std::cout << "Rotational constraints matrix fs part: \n"
-                << fs[ii] << std::endl;
-    }
-  }
-
-  // Initial state
-  if (enforce_init_cond) {
-    for (size_t ii = 0; ii < state_dim; ii++) {
-      linear_con_mat.coeffRef(row_idx+ii, ii) = 1.0;
-      lower_bound(row_idx+ii) = x0(ii);
-      upper_bound(row_idx+ii) = x0(ii);
-    }
-    row_idx += state_dim;
-  }
-
-  // Goal state
-  if (enforce_final_cond) {
-    for (size_t ii = 0; ii < state_dim; ii++) {
-      linear_con_mat.coeffRef(row_idx+ii, state_dim*(N-1)+ii) = 1.0;
-      lower_bound(row_idx+ii) = xg(ii);
-      upper_bound(row_idx+ii) = xg(ii);
-      // lower_bound(row_idx+ii) = xg(ii)-1;
-      // upper_bound(row_idx+ii) = xg(ii)+1;
-    }
-    row_idx += state_dim;
   }
 
   if (enforce_force_norm) {
@@ -779,236 +820,50 @@ void TOP::SetSimpleConstraints() {
     //   }
     // }
   }
+
+  size_t num_vars = GetNumTOPVariables();
+  size_t num_cons = GetNumTOPConstraints();
+
+  // Check that row_idx is equal to num_cons
+  if (row_idx != num_cons) {
+    std::cout << "row_idx: " << row_idx << " num_cons: " << num_cons << std::endl;
+    throw std::runtime_error("row_idx is not equal to num_cons");
+  }
+  // Check that linear_con_mat is of size num_cons x num_vars
+  if (linear_con_mat.rows() != num_cons || linear_con_mat.cols() != num_vars) {
+    std::cout << "linear_con_mat.rows(): " << linear_con_mat.rows() << " num_cons: " << num_cons << std::endl;
+    std::cout << "linear_con_mat.cols(): " << linear_con_mat.cols() << " num_vars: " << num_vars << std::endl;
+    throw std::runtime_error("linear_con_mat is not of size num_cons x num_vars");
+  }
+  // Check that lower_bound and upper_bound are of size num_cons
+  if (lower_bound.size() != num_cons || upper_bound.size() != num_cons) {
+    std::cout << "lower_bound.size(): " << lower_bound.size() << " num_cons: " << num_cons << std::endl;
+    std::cout << "upper_bound.size(): " << upper_bound.size() << " num_cons: " << num_cons << std::endl;
+    throw std::runtime_error("lower_bound and upper_bound are not of size num_cons");
+  }
+  // Check that all lower bounds are less than or equal to upper bounds
+  for (size_t ii = 0; ii < num_cons; ii++) {
+    if (lower_bound(ii) > upper_bound(ii)) {
+      std::cout << "lower_bound[" << ii << "]: " << lower_bound(ii) << " upper_bound[" << ii << "]: " << upper_bound(ii)
+                << std::endl;
+      throw std::runtime_error("lower_bound is greater than upper_bound");
+    }
+  }
+  std::cout << "Finished setting simple constraints" << std::endl;
 }
 
 void TOP::SetSimpleCosts() {
-  // Cost function
-  for (size_t ii = 0; ii < N; ii++) {
-    // Penalize only distance to xg and final linear velocity
-    for (size_t jj = 0; jj < state_dim_lin; jj++) {
-      // hessian.insert(state_dim*ii+jj, state_dim*ii+jj) = 10.0;
-      // gradient(state_dim*ii+jj) = -2*xg(jj);
+  // Weights for control effort minimization
+  double control_weight = 1.0;
+  std::vector<Eigen::Triplet<double>> hessian_triplets;
+  // Penalize control inputs (u1, u2, u3)
+  for (size_t ii = 0; ii < (N - 1); ++ii) {
+    for (size_t jj = 0; jj < control_dim_lin; ++jj) {
+      size_t idx = N * state_dim + ii * control_dim + jj;
+      hessian_triplets.emplace_back(idx, idx, control_weight);
     }
   }
-
-  for (size_t ii = 0; ii < N-1; ii++) {
-    for (size_t jj = 0; jj < control_dim; jj++) {
-      // hessian.insert(state_dim*N+control_dim*ii+jj, state_dim*N+control_dim*ii+jj) = 10.0;
-    }
-  }
-
-  if (enforce_state_LB) {
-    // Add penalty for slack variables associated with LB
-    size_t slack_var_idx_start = state_dim*N + control_dim*(N-1) + num_force_norm_slack_vars+num_moment_norm_slack_vars;
-    // Penalty for state lower bounds
-    for (size_t ii = 0; ii < state_bd_dim*(N-1); ii++) {
-      size_t slack_var_idx = slack_var_idx_start + ii;
-      gradient(slack_var_idx) = omega;
-      slack_var_idx++;
-    }
-  }
-
-  if (enforce_state_UB) {
-    // Add penalty for slack variables associated with UB
-    size_t slack_var_idx_start = state_dim*N+control_dim*(N-1)+num_force_norm_slack_vars+num_moment_norm_slack_vars+
-      state_bd_dim*(N-1);
-    // Penalty for state upper bounds
-    for (size_t ii = 0; ii < state_bd_dim*(N-1); ii++) {
-      size_t slack_var_idx = slack_var_idx_start + ii;
-      gradient(slack_var_idx) = omega;
-      slack_var_idx++;
-    }
-  }
-
-  if (enforce_lin_vel_norm) {
-    // Add penalty for z slack var associated with lin vel norm
-    for (size_t ii = 0; ii < N-1; ii++) {
-      size_t z_slack_var_idx = state_dim*N+control_dim*(N-1)+num_force_norm_slack_vars+num_moment_norm_slack_vars+
-        state_bd_dim*(N-1)+state_bd_dim*(N-1) + 4*ii + 3;
-      gradient(z_slack_var_idx) = omega;
-    }
-  }
-
-  if (enforce_ang_vel_norm) {
-    // Add penalty for z slack var associated with ang vel norm
-    for (size_t ii = 0; ii < N-1; ii++) {
-      size_t z_slack_var_idx = state_dim*N+control_dim*(N-1)+num_force_norm_slack_vars+num_moment_norm_slack_vars+
-        state_bd_dim*(N-1)+state_bd_dim*(N-1)+4*(N-1)+ 4*ii + 3;
-      gradient(z_slack_var_idx) = omega;
-    }
-  }
-
-  if (penalize_total_force) {
-    for (size_t ii = 0; ii < N-1; ii++) {
-      size_t z_slack_var_idx = state_dim*N+control_dim*(N-1)+ii*num_force_norm_slack_vars_per_iter+4;
-      gradient(z_slack_var_idx) = omega;
-    }
-  }
-
-  if (penalize_total_moment) {
-    for (size_t ii = 0; ii < N-1; ii++) {
-      size_t z_slack_var_idx = state_dim*N+control_dim*(N-1)+num_force_norm_slack_vars+
-        ii*num_moment_norm_slack_vars_per_iter+4;
-      gradient(z_slack_var_idx) = omega;
-    }
-  }
-}
-
-void TOP::UpdateSimpleConstraints() {
-  Mat7 eye;
-  eye.setIdentity();
-
-  size_t row_idx = 0;
-  size_t control_dim_lin = control_dim/2;
-  size_t control_dim_nlin = control_dim/2;
-
-  for (size_t ii = 0; ii < N-1; ii++) {
-    if (enforce_lin_dynamics) {
-      // Double integrator dynamics first
-      for (size_t jj = 0; jj < state_dim_lin; jj++) {
-        lower_bound(row_idx) = 0.0;
-        upper_bound(row_idx) = 0.0;
-
-        linear_con_mat.coeffRef(row_idx, state_dim*(ii+1)+jj) = -1.0;
-        for (size_t kk = 0; kk < state_dim_lin; kk++) {
-          linear_con_mat.coeffRef(row_idx, state_dim*ii+kk) = Ak_di(jj, kk);
-        }
-
-        for (size_t kk = 0; kk < control_dim_lin; kk++) {
-          linear_con_mat.coeffRef(row_idx, state_dim*N+control_dim*ii+kk) = Bk_di(jj, kk);
-        }
-        row_idx++;
-      }
-    }
-
-    if (enforce_rot_dynamics) {
-      // Nonlinear attitude dynamics second
-      // c = dh*(A*Xprev + B*Uprev - fk) = (eye + dh*As)*x[ii] + (dh*Bs)*u[ii] -x[ii+1]
-      // As[ii] is a 7x7 matrix
-      // Bs[ii] is a 7x3 matrix
-      // fs[ii] is a 7x1 vector
-      Vec7 Xprev_k = Xprev[ii].segment(6, 7);
-      Vec3 Uprev_k = Uprev[ii].segment(3, 3);
-      Vec7 fk = fs[ii];
-      Vec7 ck = dh*(As[ii]*Xprev_k + Bs[ii]*Uprev_k - fk);
-      for (size_t jj = 0; jj < state_dim_nlin; jj++) {
-        lower_bound(row_idx) = ck(jj);
-        upper_bound(row_idx) = ck(jj);
-
-        // Simple explicit Euler integration scheme
-        linear_con_mat.coeffRef(row_idx, state_dim*(ii+1)+state_dim_lin+jj) = -1.0;
-        for (size_t kk = 0; kk < state_dim_nlin; kk++) {
-          linear_con_mat.coeffRef(row_idx, state_dim*ii+state_dim_lin+kk) =
-            (eye(jj, kk)+dh*As[ii](jj, kk) );
-        }
-        for (size_t kk = 0; kk < control_dim_nlin; kk++) {
-          linear_con_mat.coeffRef(row_idx,
-            state_dim*N+control_dim*ii+control_dim_lin+kk) = dh*Bs[ii](jj, kk);
-        }
-        row_idx++;
-      }
-    }
-  }
-
-  // TODO(somrita): Remove this block
-  // // Skip over force and moment constraints
-  // row_idx += 2*10*(N-1);
-
-  // // State LB
-}
-
-void TOP::UpdateSimpleCosts() {
-  // Cost function
-  for (size_t ii = 0; ii < N; ii++) {
-    // Penalize only distance to xg and final linear velocity
-    for (size_t jj = 0; jj < state_dim_lin; jj++) {
-      // hessian.coeffRef(state_dim*ii+jj, state_dim*ii+jj) = 10.0;
-      // gradient(state_dim*ii+jj) = -2*xg(jj);
-    }
-  }
-
-  for (size_t ii = 0; ii < N-1; ii++) {
-    for (size_t jj = 0; jj < control_dim; jj++) {
-      // hessian.coeffRef(state_dim*N+control_dim*ii+jj, state_dim*N+control_dim*ii+jj) = 10.0;
-    }
-  }
-
-  // TODO(somrita): Put this block back
-  // // Add penalty for slack variables associated with max(g(x),0)
-  // size_t row_idx = state_dim*N + control_dim*(N-1) + control_dim*(N-1);
-
-  // // Penalty for state upper and lower bounds
-  // // TODO(somrita): Make this 2*state_bd_dim*(N-1) when UB is added
-  // for (size_t ii = 0; ii < state_bd_dim*(N-1); ii++) {
-  //   gradient(row_idx) = omega;
-  //   row_idx++;
-  // }
-}
-
-
-void TOP::UpdateDoubleIntegrator() {
-  Ak_di.setZero();
-  Bk_di.setZero();
-
-  for (size_t ii = 0; ii < 3; ii++) {
-    Ak_di(ii, ii) = 1.;
-    Ak_di(ii, 3+ii) = dh;
-    Ak_di(ii+3, ii+3) = 1;
-
-    // Bk_di(ii, ii) = 0.5 * pow(dh, 2) / mass; // Not part of a double integrator
-    Bk_di(3+ii, ii) = dh / mass;
-  }
-}
-
-void TOP::UpdateF(Vec7& f, Vec13& X, Vec6& U) {
-  f.setZero();
-
-  decimal_t Jxx = J(0, 0);
-  decimal_t Jyy = J(1, 1);
-  decimal_t Jzz = J(2, 2);
-
-  decimal_t wx = X(10);
-  decimal_t wy = X(11);
-  decimal_t wz = X(12);
-
-  Vec3 negJinvOmegaJomega;
-  negJinvOmegaJomega << (Jyy-Jzz)*wz*wy/Jxx,
-                        (Jzz-Jxx)*wx*wz/Jyy,
-                        (Jxx-Jyy)*wy*wx/Jzz;
-
-  f.segment(4, 3) = negJinvOmegaJomega;
-}
-
-void TOP::UpdateA(Mat7& A, Vec13& X, Vec6& U) {
-  A.setZero();
-
-  decimal_t wx = X(10);
-  decimal_t wy = X(11);
-  decimal_t wz = X(12);
-
-  Mat4 df_dq;
-  df_dq << 0, -wz, wy, wx,
-                wz, 0, -wx, wy,
-                -wy, wx, 0, wz,
-                -wx, -wy, -wz, 0;
-  A.block(0, 0, 4, 4) = 0.5*df_dq;
-}
-
-void TOP::UpdateB(Mat7x3& B, Vec13& X, Vec6& U) {
-  B.setZero();
-
-  B.block(4, 0, 3, 3) = Jinv;
-}
-
-void TOP::UpdateRotationalDynamics() {
-  // re-normalize quaternions between iterations
-  NormalizeQuaternions();
-
-  for (size_t ii = 0; ii < N-1; ii++) {
-    UpdateF(fs[ii], Xprev[ii], Uprev[ii]);
-    UpdateA(As[ii], Xprev[ii], Uprev[ii]);
-    UpdateB(Bs[ii], Xprev[ii], Uprev[ii]);
-  }
+  hessian.setFromTriplets(hessian_triplets.begin(), hessian_triplets.end());
 }
 
 bool TOP::Solve() {
@@ -1065,31 +920,16 @@ bool TOP::Solve() {
   std::cout << "SCP::Warm start complete" << std::endl;
 
   // TODO(somrita): Reset max_iter
-  max_iter = 3;
+  max_iter = 1;
   for (size_t kk = 0; kk < max_iter; kk++) {
-    // Update dynamics matrices
-    UpdateDoubleIntegrator();
-    UpdateRotationalDynamics();
-
-    if (kk == 0) {
-      // Set constraints and costs on first iteration
-      SetSimpleConstraints();
-      SetSimpleCosts();
-    } else {
-      // Update constraints and costs
-      // UpdateSimpleConstraints();
-      // UpdateSimpleCosts();
-      SetSimpleConstraints();
-      SetSimpleCosts();
-    }
-
-    // UpdateTrustRegionCons();
-    // UpdateGradient();
-    // UpdateObsCons();
+    SetSimpleConstraints();
+    SetSimpleCosts();
 
     if (!solver->updateLinearConstraintsMatrix(linear_con_mat)) {
       solver_ready_ = false;
     } else if (!solver->updateGradient(gradient)) {
+      solver_ready_ = false;
+    } else if (!solver->updateHessianMatrix(hessian)) {
       solver_ready_ = false;
     } else if (!solver->updateBounds(lower_bound, upper_bound)) {
       solver_ready_ = false;
@@ -1150,7 +990,7 @@ bool TOP::Solve() {
       Uprev[ii] = qp_soln.block(state_dim*N + control_dim*ii, 0, control_dim, 1);
     }
 
-    NormalizeQuaternions();
+    // NormalizeQuaternions();
 
     ValidationChecks();
 
@@ -1203,9 +1043,6 @@ bool TOP::Solve() {
 }
 
 void TOP::ValidationChecks() {
-  UpdateDoubleIntegrator();
-  UpdateRotationalDynamics();
-
   // Check boundary conditions
   decimal_t eps = 1e-5;
   Vec13 soln_x0 = Xprev[0];
@@ -1229,7 +1066,21 @@ void TOP::ValidationChecks() {
     Vec6 x = Xprev[ii].segment(0, state_dim_lin);
     Vec6 xp = Xprev[ii+1].segment(0, state_dim_lin);
     Vec3 u = Uprev[ii].segment(0, control_dim_lin);
-    lin_dyn_resid[ii] = Ak_di*x + Bk_di*u - xp;
+    Eigen::Matrix<scp::decimal_t, 6, 6>  A;
+    A << 1, 0, 0, dh, 0, 0,
+         0, 1, 0, 0, dh, 0,
+         0, 0, 1, 0, 0, dh,
+         0, 0, 0, 1, 0, 0,
+         0, 0, 0, 0, 1, 0,
+         0, 0, 0, 0, 0, 1;
+    Eigen::Matrix<scp::decimal_t, 6, 3> B;
+    B << 0, 0, 0,
+         0, 0, 0,
+         0, 0, 0,
+         dh/mass, 0, 0,
+         0, dh/mass, 0,
+         0, 0, dh/mass;
+    lin_dyn_resid[ii] = A*x + B*u - xp;
     decimal_t max_ii = lin_dyn_resid[ii].cwiseAbs().maxCoeff();
     max_diff_lin_dyn = std::max(max_diff_lin_dyn, max_ii);
   }
@@ -1410,19 +1261,19 @@ void TOP::ValidationChecks() {
   std::cout << std::endl;
 }
 
-void TOP::NormalizeQuaternions() {
-  // re-normalize quaternions
-  for (size_t ii = 0; ii < N; ii++) {
-    decimal_t q_norm = Xprev[ii].segment(6, 4).norm();
-    Xprev[ii].segment(6, 4) /= q_norm;
-  }
-}
+// void TOP::NormalizeQuaternions() {
+//   // re-normalize quaternions
+//   for (size_t ii = 0; ii < N; ii++) {
+//     decimal_t q_norm = Xprev[ii].segment(6, 4).norm();
+//     Xprev[ii].segment(6, 4) /= q_norm;
+//   }
+// }
 
 void TOP::PolishSolution() {
   if (!solved_) {
     return;
   }
-  NormalizeQuaternions();
+  // NormalizeQuaternions();
 }
 
 // NOTE: Functions below this point are not currently being used but may be good for future modularization.
@@ -2211,4 +2062,57 @@ void TOP::PolishSolution() {
 //   return true;
 // }
 
+void TOP::WriteTrajectoryToFile(const Vec13Vec& states, const Vec6Vec& controls, const std::string& filename) {
+  std::ofstream traj_file(filename);
+  if (!traj_file.is_open()) {
+    std::cerr << "Failed to open trajectory file for writing." << std::endl;
+    return;
+  }
+  for (size_t i = 0; i < states.size(); ++i) {
+    traj_file << states[i].transpose();
+    if (i < controls.size()) traj_file << " " << controls[i].transpose();
+    traj_file << std::endl;
+  }
+  traj_file.close();
+}
+
 }  //  namespace scp
+
+int main() {
+  scp::TOP top_eg(20., 101);
+  scp::Vec13 xg;
+  std::vector<scp::Vec13> xgs;
+  // Case 2 : Motion in Y
+  scp::Vec13 xg2;
+  xg2 << -0.4, -0.4, -0.67, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+  xgs.push_back(xg2);
+  // Case 1 : Motion in X
+  scp::Vec13 xg1;
+  xg1 << 0.4, 0.4, -0.67, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+  xgs.push_back(xg1);
+  // Case 3 : Motion in XY
+  scp::Vec13 xg3;
+  xg3 << 0.4, -0.4, -0.67, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+  xgs.push_back(xg3);
+  for (size_t i = 0; i < xgs.size(); ++i) {
+    top_eg.x0 << -0.4, 0.4, -0.67, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+    top_eg.xg = xgs[i];
+    if (!top_eg.Solve()) {
+      std::cerr << "Error: Could not solve the problem!" << std::endl;
+      return -1;
+    }
+    Eigen::VectorXd solution = top_eg.solver->getSolution();
+    for (size_t ii = 0; ii < top_eg.N; ii++) {
+      top_eg.Xprev[ii] = solution.segment(top_eg.state_dim*ii, top_eg.state_dim);
+    }
+    for (size_t ii = 0; ii < top_eg.N-1; ii++) {
+      top_eg.Uprev[ii] = solution.segment(top_eg.state_dim*top_eg.N + top_eg.control_dim*ii, top_eg.control_dim);
+    }
+    std::string fname = "optim_trajectory_" + std::to_string(i+1) + ".txt";
+    top_eg.WriteTrajectoryToFile(top_eg.Xprev, top_eg.Uprev, fname);
+    std::cout << "Success: Problem " << std::to_string(i + 1) << " out of " << std::to_string(xgs.size()) << " solved!"
+              << std::endl;
+    std::cout << "--------------------------------------------" << std::endl;
+  }
+  return 0;
+}

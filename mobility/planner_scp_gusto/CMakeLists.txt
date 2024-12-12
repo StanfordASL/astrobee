@@ -82,12 +82,14 @@ add_library(planner_scp_gusto
   src/planner_scp_gusto_nodelet.cc
   src/optim.cc
   src/bullet_collision_checker.cpp
-  src/simple/optim_simple.cc
+  # src/simple/optim_simple.cc
 )
 
+add_executable(optim src/optim.cc)
+target_link_libraries(optim ${catkin_LIBRARIES} ${BULLET_LIBRARIES} OsqpEigen::OsqpEigen)
+
 add_executable(optim_simple src/simple/optim_simple.cc)
-target_link_libraries(optim_simple ${catkin_LIBRARIES} ${BULLET_LIBRARIES})
-target_link_libraries(optim_simple OsqpEigen::OsqpEigen)
+target_link_libraries(optim_simple ${catkin_LIBRARIES} ${BULLET_LIBRARIES} OsqpEigen::OsqpEigen)
 
 add_dependencies(planner_scp_gusto ${catkin_EXPORTED_TARGETS})
 target_link_libraries(planner_scp_gusto ${catkin_LIBRARIES} ${BULLET_LIBRARIES})
