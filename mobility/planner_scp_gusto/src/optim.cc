@@ -56,6 +56,7 @@ TOP::TOP(decimal_t Tf_, int N_)
   enforce_ang_vel_norm = false;
   enforce_trust_region_const = false;
   enforce_obs_avoidance_const = true;
+  enforce_state_bounds = false;
 
   penalize_total_force = false;
   penalize_total_moment = false;
@@ -100,28 +101,11 @@ TOP::TOP(decimal_t Tf_, int N_)
   keep_in_zones_.clear();
   keep_out_zones_.clear();
 
-  // TODO(acauligi): determine what pos_min_ and pos_max_ should be correctly
-  for (size_t ii = 0; ii < 3; ii++) {
-    pos_min_(ii) = -OsqpEigen::INFTY;
-    pos_max_(ii) = OsqpEigen::INFTY;
-    // TODO(somrita): Remove after testing
-    // pos_min_(ii) = -6;
-    // pos_max_(ii) = 6;
-  }
-
-  x_max << pos_max_(0), pos_max_(1), pos_max_(2),
+  x_max << OsqpEigen::INFTY, OsqpEigen::INFTY, OsqpEigen::INFTY,
     desired_vel_, desired_vel_, desired_vel_,
     1, 1, 1, 1,
     desired_omega_, desired_omega_, desired_omega_;
-  // TODO(somrita): Remove after testing
-  // x_max << pos_max_(0), pos_max_(1), pos_max_(2),
-  //   desired_vel_, desired_vel_, desired_vel_,
-  //   0.5, 0.5, 0.5, 0.5,
-  //   desired_omega_, desired_omega_, desired_omega_;
   x_min = -x_max;
-  x_min(0) = pos_min_(0);
-  x_min(1) = pos_min_(1);
-  x_min(2) = pos_min_(2);
 
   // TODO(somrita): remove
   std::cout << "Min position" << x_min(0) << x_min(1) << x_min(2) << std::endl;
@@ -168,11 +152,13 @@ size_t TOP::GetNumTOPConstraints() {
   size_t num_lin_dynamics_constr = state_dim_lin * (N - 1);   // (x,y,z) and (vx,vy,vz) for each time step
   size_t num_rot_dynamics_constr = state_dim_nlin * (N - 1);  // (q0,q1,q2,q3) and (wx,wy,wz) for each time step
   size_t num_obs_avoidance_const = (N - 1) * pos_dim;               // Exactly 3 (XYZ) constraints per time step
+  size_t num_state_bounds_const = N * state_dim;
   size_t num_total_constr = (enforce_init_cond ? num_init_cond_constr : 0) +
                            (enforce_final_cond ? num_final_cond_constr : 0) +
                            (enforce_lin_dynamics ? num_lin_dynamics_constr : 0) +
                            (enforce_rot_dynamics ? num_rot_dynamics_constr : 0) +
-                           (enforce_obs_avoidance_const ? num_obs_avoidance_const : 0);
+                           (enforce_obs_avoidance_const ? num_obs_avoidance_const : 0) +
+                           (enforce_state_bounds ? num_state_bounds_const : 0);
   if (enforce_force_norm || enforce_moment_norm || enforce_state_LB || enforce_state_UB || enforce_lin_vel_norm ||
       enforce_ang_vel_norm) {
     throw std::runtime_error("Error: Constraints not implemented yet!");
@@ -183,6 +169,7 @@ size_t TOP::GetNumTOPConstraints() {
   std::cout << "Lin dynamics: " << num_lin_dynamics_constr << std::endl;
   std::cout << "Rot dynamics: " << num_rot_dynamics_constr << std::endl;
   std::cout << "Obs avoidance: " << num_obs_avoidance_const << std::endl;
+  std::cout << "State bounds: " << num_state_bounds_const << std::endl;
 
   // Print which constraints are enabled and corresponding number of constraints
   std::cout << "enforce_init_cond: " << enforce_init_cond << " (" << num_init_cond_constr << " constraints)"
@@ -195,6 +182,8 @@ size_t TOP::GetNumTOPConstraints() {
             << std::endl;
   std::cout << "enforce_obs_avoidance_const: " << enforce_obs_avoidance_const << " (" << num_obs_avoidance_const
             << " constraints)" << std::endl;
+  std::cout << "enforce_state_bounds: " << enforce_state_bounds << " (" << num_state_bounds_const << " constraints)"
+            << std::endl;
   std::cout << "Total constraints: " << num_total_constr << std::endl;
 
   return num_total_constr;
@@ -212,6 +201,10 @@ size_t TOP::GetNumTOPConstraints() {
   // + 11*(N-1)  // Angular velocity norm constraints
   // + 3*(N-1);  // Obstacle avoidance constraints
 }
+
+Vec3 TOP::MinPos() { return Vec3(x_min(0), x_min(1), x_min(2)); }
+
+Vec3 TOP::MaxPos() { return Vec3(x_max(0), x_max(1), x_max(2)); }
 
 void TOP::ResetSCPParams() {
   // SCP parameters
@@ -415,7 +408,7 @@ void TOP::InitTrajStraightline() {
 //   }
 // }
 
-// Eigen::Matrix<double, 4, 3> TOP::calculateQMat(const Eigen::Vector4d& quaternion) {
+// Eigen::Matrix<double, 4, 3> TOP::CalculateQMat(const Eigen::Vector4d& quaternion) {
 //     // Extract quaternion components
 //     double q_w = quaternion(0);
 //     double q_x = quaternion(1);
@@ -432,8 +425,82 @@ void TOP::InitTrajStraightline() {
 //     return Q_mat;
 // }
 
+decimal_t TOP::ComputeSignedDistance(const Vec3& point) {
+  // Initialize the signed distance
+  decimal_t signed_distance = 0.0;
+
+  // Extract the keep-out zone and apply a buffer for clearance
+  Eigen::AlignedBox3d box = keep_out_zones_[0];
+  Vec3 ko_min_original = box.min();
+  Vec3 ko_max_original = box.max();
+  Vec3 ko_min = ko_min_original - Vec3(obs_clearance, obs_clearance, obs_clearance);
+  Vec3 ko_max = ko_max_original + Vec3(obs_clearance, obs_clearance, obs_clearance);
+
+  // Clip ko_min and ko_max to be within position bounds
+  ko_min = ko_min.cwiseMax(MinPos());
+  ko_max = ko_max.cwiseMin(MaxPos());
+
+  // Compute the signed distance for each dimension (x, y, z)
+  decimal_t dist_x = std::max(0.0, std::max(ko_min[0] - point[0], point[0] - ko_max[0]));
+  decimal_t dist_y = std::max(0.0, std::max(ko_min[1] - point[1], point[1] - ko_max[1]));
+  decimal_t dist_z = std::max(0.0, std::max(ko_min[2] - point[2], point[2] - ko_max[2]));
+
+  // Identify the maximum signed distance
+  signed_distance = std::max({dist_x, dist_y, dist_z});
+
+  return signed_distance;
+}
+
+// Compute the signed distance gradient for a point with respect to the box
+Vec3 TOP::ComputeSignedDistanceGradient(const Vec3& point) {
+  // Initialize the gradient
+  Vec3 grad(0, 0, 0);
+
+  // Extract the keep-out zone and apply a buffer for clearance
+  Eigen::AlignedBox3d box = keep_out_zones_[0];
+  Vec3 ko_min_original = box.min();
+  Vec3 ko_max_original = box.max();
+  Vec3 ko_min = ko_min_original - Vec3(obs_clearance, obs_clearance, obs_clearance);
+  Vec3 ko_max = ko_max_original + Vec3(obs_clearance, obs_clearance, obs_clearance);
+
+  // Clip ko_min and ko_max to be within position bounds
+  ko_min = ko_min.cwiseMax(MinPos());
+  ko_max = ko_max.cwiseMin(MaxPos());
+
+  // Compute the signed distance for each dimension (x, y, z)
+  decimal_t dist_x = std::max(0.0, std::max(ko_min[0] - point[0], point[0] - ko_max[0]));
+  decimal_t dist_y = std::max(0.0, std::max(ko_min[1] - point[1], point[1] - ko_max[1]));
+  decimal_t dist_z = std::max(0.0, std::max(ko_min[2] - point[2], point[2] - ko_max[2]));
+
+  // Identify the maximum signed distance
+  decimal_t max_dist = std::max({dist_x, dist_y, dist_z});
+
+  // Compute the gradient based on the max distance
+  if (max_dist == dist_x) {
+      if (point[0] < ko_min[0]) {
+        grad[0] = -1.0;  // Point is on the left side of the box
+      } else if (point[0] > ko_max[0]) {
+          grad[0] = 1.0;  // Point is on the right side of the box
+      }
+  } else if (max_dist == dist_y) {
+      if (point[1] < ko_min[1]) {
+        grad[1] = -1.0;  // Point is below the box
+      } else if (point[1] > ko_max[1]) {
+          grad[1] = 1.0;  // Point is above the box
+      }
+  } else if (max_dist == dist_z) {
+      if (point[2] < ko_min[2]) {
+        grad[2] = -1.0;  // Point is behind the box
+      } else if (point[2] > ko_max[2]) {
+          grad[2] = 1.0;  // Point is in front of the box
+      }
+  }
+
+  return grad;  // Return the gradient vector
+}
+
 // Function to calculate Q_mat
-Mat4x3 TOP::calculateQMat(const Vec4& quaternion) {
+Mat4x3 TOP::CalculateQMat(const Vec4& quaternion) {
     // Extract quaternion components
     double q_x = quaternion(0);
     double q_y = quaternion(1);
@@ -457,6 +524,7 @@ void TOP::SetSimpleConstraints() {
   std::cout << "enforce_lin_dynamics: " << enforce_lin_dynamics << std::endl;
   std::cout << "enforce_rot_dynamics: " << enforce_rot_dynamics << std::endl;
   std::cout << "enforce_obs_avoidance_const: " << enforce_obs_avoidance_const << std::endl;
+  std::cout << "enforce_state_bounds: " << enforce_state_bounds << std::endl;
 
   Mat7 eye;
   eye.setIdentity();
@@ -570,7 +638,7 @@ void TOP::SetSimpleConstraints() {
                 // Compute QMat dynamically for quaternion at time step `ii`
                 Eigen::Vector4d q_i = Xprev[ii].segment(6, 4);
                 // Eigen::Vector4d q_i = X.segment<4>(ii * state_dim + pos_dim + lin_vel_dim);
-                Eigen::Matrix<double, 4, 3> QMat = calculateQMat(q_i);
+                Eigen::Matrix<double, 4, 3> QMat = CalculateQMat(q_i);
 
                 dynamics_triplets.emplace_back(row_idx, ii * state_dim + pos_dim + lin_vel_dim + jj, -1.0);  // -q_i
                 dynamics_triplets.emplace_back(row_idx, ii * state_dim + pos_dim + lin_vel_dim + quat_dim + kk,
@@ -890,13 +958,12 @@ void TOP::SetSimpleConstraints() {
     Eigen::Vector3d ko_min = ko_min_original - Eigen::Vector3d(obs_clearance, obs_clearance, obs_clearance);
     Eigen::Vector3d ko_max = ko_max_original + Eigen::Vector3d(obs_clearance, obs_clearance, obs_clearance);
 
-    // Clip ko_min and ko_max to be within pos_min_ and pos_max_
-    ko_min = ko_min.cwiseMax(pos_min_);  // clip ko_min to be >= pos_min_
-    ko_max = ko_max.cwiseMin(pos_max_);  // clip ko_max to be <= pos_max_
+    // Clip ko_min and ko_max to be within pose min and max
+    ko_min = ko_min.cwiseMax(MinPos());  // clip ko_min to be >= pose min
+    ko_max = ko_max.cwiseMin(MaxPos());  // clip ko_max to be <= pose max
 
-    // Print pos_min_ and pos_max_
-    std::cout << "pos_min_: " << pos_min_.transpose() << std::endl;
-    std::cout << "pos_max_: " << pos_max_.transpose() << std::endl;
+    std::cout << "pose min: " << MinPos().transpose() << std::endl;
+    std::cout << "pose max: " << MaxPos().transpose() << std::endl;
 
     // Print updated ko_min and ko_max
     std::cout << "ko_min: " << ko_min.transpose() << std::endl;
@@ -905,8 +972,8 @@ void TOP::SetSimpleConstraints() {
     std::cout << "ko_center: " << ko_center.transpose() << std::endl;
     for (size_t ii = 0; ii < N-1; ii++) {
       for (size_t jj = 0; jj < 3; jj++) {
-        decimal_t lb = pos_min_[jj];
-        decimal_t ub = pos_max_[jj];
+        decimal_t lb = MinPos()[jj];
+        decimal_t ub = MaxPos()[jj];
         // lb < x < ub
         // Either ko_max < x < ub or lb < x < ko_min
         bool active_proj = true;
@@ -975,6 +1042,18 @@ void TOP::SetSimpleConstraints() {
     // }
   }
 
+  if (enforce_state_bounds) {
+    std::vector<Eigen::Triplet<double>> state_bounds_triplets;
+    for (size_t ii = 0; ii < N; ii++) {
+      for (size_t jj = 0; jj < state_dim; jj++) {
+        linear_con_mat.coeffRef(row_idx, ii * state_dim + jj) = 1.0;
+        lower_bound(row_idx) = x_min[jj];
+        upper_bound(row_idx) = x_max[jj];
+        ++row_idx;
+      }
+    }
+  }
+
   size_t num_vars = GetNumTOPVariables();
   size_t num_cons = GetNumTOPConstraints();
 
@@ -1018,6 +1097,22 @@ void TOP::SetSimpleCosts() {
     }
   }
   hessian.setFromTriplets(hessian_triplets.begin(), hessian_triplets.end());
+
+  // std::cout << "Setting gradient" << std::endl;
+
+  // // Gradient to keep states away from obstacle
+  // if (enforce_obs_avoidance_const) {
+  //   if (Xprev.size() == N) {
+  //     for (size_t ii = 0; ii < N; ii++) {
+  //       Vec3 point = Xprev[ii].segment(0, 3);
+  //       decimal_t dist = ComputeSignedDistance(point);
+  //       Vec3 sd_grad = ComputeSignedDistanceGradient(point);
+  //       gradient(ii * state_dim + 0) = sd_grad[0];
+  //       gradient(ii * state_dim + 1) = sd_grad[1];
+  //       gradient(ii * state_dim + 2) = sd_grad[2];
+  //     }
+  //   }
+  // }
 }
 
 bool TOP::Solve() {
@@ -2326,8 +2421,12 @@ int main() {
     // Set granite environment and bounds
     top_eg.is_granite = true;
     if (top_eg.is_granite) {
-        top_eg.pos_min_(2) = -0.675;
-        top_eg.pos_max_(2) = -0.67;
+      top_eg.x_min(2) = -0.675;  // z coordinate
+      top_eg.x_max(2) = -0.67;
+      top_eg.x_min(6) = -0.05;  // qx
+      top_eg.x_max(6) = 0.05;
+      top_eg.x_min(7) = -0.05;  // qy
+      top_eg.x_max(7) = 0.05;
     }
 
     // Initialize motion cases

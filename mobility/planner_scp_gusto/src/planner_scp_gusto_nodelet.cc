@@ -377,13 +377,17 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
 
     // Update position bds for solver
     for (size_t ii = 0; ii < 3; ii++) {
-      top->pos_min_(ii) = min(ii);
-      top->pos_max_(ii) = max(ii);
+      top->x_min(ii) = min(ii);
+      top->x_max(ii) = max(ii);
     }
 
     if (top->is_granite) {
-      top->pos_min_(2) = -0.675;
-      top->pos_max_(2) = -0.67;
+      top->x_min(2) = -0.675;  // z coordinate
+      top->x_max(2) = -0.67;
+      top->x_min(6) = -0.05;  // qx
+      top->x_max(6) = 0.05;
+      top->x_min(7) = -0.05;  // qy
+      top->x_max(7) = 0.05;
     }
 
     if (keep_in_zones_.size() == 0) {

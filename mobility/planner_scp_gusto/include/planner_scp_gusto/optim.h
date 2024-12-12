@@ -63,6 +63,7 @@ class TOP {
   bool enforce_ang_vel_norm;
   bool enforce_trust_region_const;
   bool enforce_obs_avoidance_const;
+  bool enforce_state_bounds;
 
   bool penalize_total_force;
   bool penalize_total_moment;
@@ -144,9 +145,6 @@ class TOP {
   std::vector<decimal_t> obs_ub;
   decimal_t obs_clearance;
 
-  Vec3 pos_min_;              // Bounds of keep-in region
-  Vec3 pos_max_;              // Bounds of keep-in region
-
   // Solver params
   bool faceforward_;          // Face-forward trajectory?
   bool check_obstacles_;      // Perform obstacle checking
@@ -164,6 +162,9 @@ class TOP {
   size_t GetNumTOPVariables();
   size_t GetNumTOPConstraints();
 
+  Vec3 MinPos();
+  Vec3 MaxPos();
+
   void ResetSCPParams();
   void UpdateProblemDimension(size_t N_);
 
@@ -173,6 +174,9 @@ class TOP {
   void UpdateSimpleConstraints();
   void UpdateSimpleCosts();
 
+  Vec3 ComputeSignedDistanceGradient(const Vec3& point);
+  decimal_t ComputeSignedDistance(const Vec3& point);
+
   void ComputeSignedDistances();
   void InitTrajStraightline();
   void UpdateDoubleIntegrator();
@@ -180,7 +184,7 @@ class TOP {
   void UpdateA(Mat7& A, Vec13& X, Vec6& U);
   void UpdateB(Mat7x3& B, Vec13& X, Vec6& U);
   void UpdateRotationalDynamics();
-  Mat4x3 calculateQMat(const Vec4& quaternion);
+  Mat4x3 CalculateQMat(const Vec4& quaternion);
 
   void SetHessianMatrix();
   void SetGradient();
