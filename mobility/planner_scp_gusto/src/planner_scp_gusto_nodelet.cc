@@ -69,6 +69,8 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
   float control_rate_;    // Control frequency
   double max_time_;       // Max generation time
   double epsilon_;
+  bool enforce_obs_avoidance_const_;
+  bool is_granite_;
   bool use_2d;            // true for granite table
   std::string flight_mode_;
   ros::NodeHandle *nh_;
@@ -93,6 +95,8 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
     nh_ = nh;
     // Save the epsilon value
     epsilon_ = cfg_.Get<double>("epsilon");
+    enforce_obs_avoidance_const_ = cfg_.Get<bool>("enforce_obs_avoidance_const");
+    is_granite_ = cfg_.Get<bool>("is_granite");
       // Notify initialization complete
     NODELET_DEBUG_STREAM("Initialization complete");
     // Success
@@ -104,9 +108,13 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
   }
 
   bool ReconfigureCallback(dynamic_reconfigure::Config &config) {
+    std::cout << "ReconfigureCallback" << std::endl;
     if (!cfg_.Reconfigure(config))
       return false;
     epsilon_ = cfg_.Get<double>("epsilon");
+    enforce_obs_avoidance_const_ = cfg_.Get<bool>("enforce_obs_avoidance_const");
+    std::cout << "set enforce_obs_avoidance_const_ to " << enforce_obs_avoidance_const_ << std::endl;
+    is_granite_ = cfg_.Get<bool>("is_granite");
     return true;
   }
 
@@ -380,7 +388,21 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
       top->x_min(ii) = min(ii);
       top->x_max(ii) = max(ii);
     }
-    top->is_granite = true;  // TODO(Somrita): Read from config
+
+    // if (!ReconfigureCallback(cfg_)) {
+    //   std::cout << "Failed to reconfigure" << std::endl;
+    //   return false;
+    // }
+    // std::cout << "Reconfigured" << std::endl;
+    std::cout << "Now the value of enforce_obs_avoidance_const_ is " << enforce_obs_avoidance_const_ << std::endl;
+    if (!cfg_.Get<bool>("enforce_obs_avoidance_const", enforce_obs_avoidance_const_)){
+      std::cout << "Failed to get param enforce_obs_avoidance_const_" << std::endl;
+      enforce_obs_avoidance_const_ = true;
+    }
+    std::cout << "Now the value of enforce_obs_avoidance_const_ is " << enforce_obs_avoidance_const_ << std::endl;
+    top->is_granite = cfg_.Get<bool>("is_granite");
+    top->enforce_obs_avoidance_const = enforce_obs_avoidance_const_;
+    std::cout << "calling TOP with enforce_obs_avoidance_const: " << top->enforce_obs_avoidance_const << std::endl;
     if (top->is_granite) {
       top->x_min(2) = -0.675;  // z coordinate
       top->x_max(2) = -0.67;

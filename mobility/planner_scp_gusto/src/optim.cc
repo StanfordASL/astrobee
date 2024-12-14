@@ -225,9 +225,6 @@ void TOP::ResetSCPParams() {
 
 void TOP::UpdateProblemDimension(size_t N_) {
   // Allocate matrices for variables and constraints
-  if (solver && N == N_) {
-    return;
-  }
 
   N = N_;
 
@@ -241,7 +238,7 @@ void TOP::UpdateProblemDimension(size_t N_) {
     solver->data()->clearLinearConstraintsMatrix();
   }
 
-  std::cout << "cleared stuff" << std::endl;
+  std::cout << "TOP::UpdateProblemDimension: Cleared solver" << std::endl;
 
   Xprev.resize(N);
   Uprev.resize(N-1);
@@ -257,6 +254,8 @@ void TOP::UpdateProblemDimension(size_t N_) {
 
   size_t num_vars = GetNumTOPVariables();
   size_t num_cons = GetNumTOPConstraints();
+
+  std::cout << "TOP::UpdateProblemDimension: Num vars: " << num_vars << " Num cons: " << num_cons << std::endl;
 
   hessian.resize(num_vars, num_vars);
   linear_con_mat.resize(num_cons, num_vars);
@@ -1119,6 +1118,10 @@ void TOP::SetSimpleCosts() {
 
 bool TOP::Solve() {
   solved_ = false;
+  ResetSCPParams();
+  UpdateProblemDimension(N);
+  std::cout << "TOP::Solve: Updated problem dimension" << std::endl;
+  std::cout << "linear_con_mat size: " << linear_con_mat.rows() << " x " << linear_con_mat.cols() << std::endl;
   InitTrajStraightline();
   bool add_custom_keep_out_zone = true;
 
