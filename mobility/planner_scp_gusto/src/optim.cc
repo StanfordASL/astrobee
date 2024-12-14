@@ -1087,12 +1087,14 @@ void TOP::SetSimpleConstraints() {
 
 void TOP::SetSimpleCosts() {
   // Weights for control effort minimization
-  double control_weight = 1.0;
+  double force_weight = 1.0;
+  double torque_weight = 1.0;
   std::vector<Eigen::Triplet<double>> hessian_triplets;
   // Penalize control inputs (u1, u2, u3)
   for (size_t ii = 0; ii < (N - 1); ++ii) {
     for (size_t jj = 0; jj < control_dim; ++jj) {
       size_t idx = N * state_dim + ii * control_dim + jj;
+      double control_weight = (jj < control_dim_lin) ? force_weight : torque_weight;
       hessian_triplets.emplace_back(idx, idx, control_weight);
     }
   }
@@ -2372,6 +2374,22 @@ std::vector<scp::Vec13> initializeMotionCases() {
     // // Case 7: Rotation of 180 deg in place about Z
     // (angle-axis) (3.13 0 0 1) --> Quat x y z w (0 0 0.9999832, 0.0057963)
     xg << -0.4, 0.4, -0.67, 0, 0, 0, 0, 0, 0.9999832, 0.0057963, 0, 0, 0;
+    xgs.push_back(xg);
+
+    // Case 8: Rotation + translation in Y
+    xg << -0.4, -0.4, -0.67, 0, 0, 0, 0, 0, 0.7068252, 0.7073883, 0, 0, 0;
+    xgs.push_back(xg);
+
+    // Case 9: Rotation + translation in X
+    xg << 0.4, 0.4, -0.67, 0, 0, 0, 0, 0, 0.7068252, 0.7073883, 0, 0, 0;
+    xgs.push_back(xg);
+
+    // Case 10: Rotation + translation in XY
+    xg << 0.4, -0.4, -0.67, 0, 0, 0, 0, 0, 0.7068252, 0.7073883, 0, 0, 0;
+    xgs.push_back(xg);
+
+    // Case 11: Rotation + translation asymmetric motion in XY
+    xg << 0.5, -0.3, -0.67, 0, 0, 0, 0, 0, 0.7068252, 0.7073883, 0, 0, 0;
     xgs.push_back(xg);
 
     return xgs;

@@ -380,7 +380,7 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
       top->x_min(ii) = min(ii);
       top->x_max(ii) = max(ii);
     }
-
+    top->is_granite = true;  // TODO(Somrita): Read from config
     if (top->is_granite) {
       top->x_min(2) = -0.675;  // z coordinate
       top->x_max(2) = -0.67;
