@@ -2407,6 +2407,18 @@ std::vector<scp::Vec13> initializeMotionCases(bool is_granite) {
     // (angle-axis) (1.57 0 0 1) --> Quat x y z w (0 0 0.7068252 0.7073883)
     xg << 10.28, -9.81, 4.30, 0, 0, 0, 0, 0, 0.7068252, 0.7073883, 0, 0, 0;
     xgs.push_back(xg);
+    // Case 3: Translation in 3 axes
+    xg << 11.00, -8.81, 5.30, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+    xgs.push_back(xg);
+    // Case 4: Translation + rotation
+    xg << 10.28, -8.81, 4.30, 0, 0, 0, 0, 0, 0.7068252, 0.7073883, 0, 0, 0;
+    xgs.push_back(xg);
+    // Case 5: Translation in 2 axes + rotation
+    xg << 11.00, -8.81, 4.30, 0, 0, 0, 0, 0, 0.7068252, 0.7073883, 0, 0, 0;
+    xgs.push_back(xg);
+    // Case 6: Translation in 3 axes + rotation
+    xg << 11.00, -8.81, 5.30, 0, 0, 0, 0, 0, 0.7068252, 0.7073883, 0, 0, 0;
+    xgs.push_back(xg);
   }
 
   return xgs;
