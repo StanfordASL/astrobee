@@ -2400,24 +2400,27 @@ std::vector<scp::Vec13> initializeMotionCases(bool is_granite) {
     xg << 0.5, -0.3, -0.67, 0, 0, 0, 0, 0, 0.7068252, 0.7073883, 0, 0, 0;
     xgs.push_back(xg);
   } else {
-    // Case 1: Motion in Y
-    xg << 10.28, -8.81, 4.30, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
-    xgs.push_back(xg);
-    // Case 2: Rotation in place
-    // (angle-axis) (1.57 0 0 1) --> Quat x y z w (0 0 0.7068252 0.7073883)
-    xg << 10.28, -9.81, 4.30, 0, 0, 0, 0, 0, 0.7068252, 0.7073883, 0, 0, 0;
-    xgs.push_back(xg);
-    // Case 3: Translation in 3 axes
-    xg << 11.00, -8.81, 5.30, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
-    xgs.push_back(xg);
-    // Case 4: Translation + rotation
-    xg << 10.28, -8.81, 4.30, 0, 0, 0, 0, 0, 0.7068252, 0.7073883, 0, 0, 0;
-    xgs.push_back(xg);
-    // Case 5: Translation in 2 axes + rotation
-    xg << 11.00, -8.81, 4.30, 0, 0, 0, 0, 0, 0.7068252, 0.7073883, 0, 0, 0;
-    xgs.push_back(xg);
-    // Case 6: Translation in 3 axes + rotation
-    xg << 11.00, -8.81, 5.30, 0, 0, 0, 0, 0, 0.7068252, 0.7073883, 0, 0, 0;
+    // // Case 1: Motion in Y
+    // xg << 10.28, -8.81, 4.30, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+    // xgs.push_back(xg);
+    // // Case 2: Rotation in place
+    // // (angle-axis) (1.57 0 0 1) --> Quat x y z w (0 0 0.7068252 0.7073883)
+    // xg << 10.28, -9.81, 4.30, 0, 0, 0, 0, 0, 0.7068252, 0.7073883, 0, 0, 0;
+    // xgs.push_back(xg);
+    // // Case 3: Translation in 3 axes
+    // xg << 11.00, -8.81, 5.30, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+    // xgs.push_back(xg);
+    // // Case 4: Translation + rotation
+    // xg << 10.28, -8.81, 4.30, 0, 0, 0, 0, 0, 0.7068252, 0.7073883, 0, 0, 0;
+    // xgs.push_back(xg);
+    // // Case 5: Translation in 2 axes + rotation
+    // xg << 11.00, -8.81, 4.30, 0, 0, 0, 0, 0, 0.7068252, 0.7073883, 0, 0, 0;
+    // xgs.push_back(xg);
+    // // Case 6: Translation in 3 axes + rotation
+    // xg << 11.00, -8.81, 5.30, 0, 0, 0, 0, 0, 0.7068252, 0.7073883, 0, 0, 0;
+    // xgs.push_back(xg);
+    // Case 7: Motion in YZ
+    xg << 10.28, -8.81, 5.30, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
     xgs.push_back(xg);
   }
 
@@ -2442,6 +2445,11 @@ void processProblemInstance(scp::TOP &top_eg, const scp::Vec13 &xg, const Eigen:
         top_eg.keep_out_zones_.clear();
         top_eg.keep_out_zones_.push_back(vbox);
     }
+  } else {
+    std::cout << "Number of obstacles: " << top_eg.keep_out_zones_.size() << std::endl;
+    top_eg.keep_out_zones_.clear();
+    top_eg.keep_out_zones_.push_back(vbox);
+    std::cout << "After adding 1, Number of obstacles: " << top_eg.keep_out_zones_.size() << std::endl;
   }
 
   if (!top_eg.Solve()) {
@@ -2475,7 +2483,7 @@ int main() {
   bool test_granite_large_obs = false;
   bool test_granite_small_obs = false;
   bool test_iss_no_obs = true;
-  bool test_iss_small_obs = false;
+  bool test_iss_small_obs = true;
 
   if (test_granite_no_obs || test_granite_large_obs || test_granite_small_obs) {
     scp::TOP top_eg(20., 801);
@@ -2532,6 +2540,16 @@ int main() {
       // Process problems without obstacles
       for (size_t i = 0; i < xgs.size(); ++i) {
           processProblemInstance(top_eg, xgs[i], Eigen::AlignedBox3d(), i + 1);
+      }
+    }
+    if (test_iss_small_obs) {
+      // Process problems with a smaller obstacle
+      Eigen::AlignedBox3d smallObstacle;
+      smallObstacle.extend(Eigen::Vector3d(0.0, -9.2, 4.4));
+      smallObstacle.extend(Eigen::Vector3d(20.0, -8.0, 4.8));
+      top_eg.enforce_obs_avoidance_const = true;
+      for (size_t i = 0; i < xgs.size(); ++i) {
+          processProblemInstance(top_eg, xgs[i], smallObstacle, xgs.size() + i + 1);
       }
     }
   }
