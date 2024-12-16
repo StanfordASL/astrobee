@@ -395,7 +395,7 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
     // }
     // std::cout << "Reconfigured" << std::endl;
     std::cout << "Now the value of enforce_obs_avoidance_const_ is " << enforce_obs_avoidance_const_ << std::endl;
-    if (!cfg_.Get<bool>("enforce_obs_avoidance_const", enforce_obs_avoidance_const_)){
+    if (!cfg_.Get<bool>("enforce_obs_avoidance_const", enforce_obs_avoidance_const_)) {
       std::cout << "Failed to get param enforce_obs_avoidance_const_" << std::endl;
       enforce_obs_avoidance_const_ = true;
     }

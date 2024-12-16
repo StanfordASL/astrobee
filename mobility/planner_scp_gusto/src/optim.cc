@@ -353,7 +353,7 @@ void TOP::InitTrajStraightline() {
       Uprev[ii](jj) = 0;
     }
   }
-  WriteTrajectoryToFile(Xprev, Uprev, "initial_straight_line_trajectory.txt");
+  WriteTrajectoryToFile(Xprev, Uprev, (std::string(is_granite ? "granite" : "iss") + "_initial_straight_line_trajectory.txt"));
 }
 
 // void TOP::UpdateF(Vec7& f, Vec13& X, Vec6& U) {
@@ -2337,16 +2337,18 @@ void TOP::WriteTrajectoryToFile(const Vec13Vec& states, const Vec6Vec& controls,
 // Generalized function to set all elements in a vector to zero
 template <typename VecType>
 void clearToZeros(std::vector<VecType, Eigen::aligned_allocator<VecType>>& vec) {
-    for (auto& elem : vec) {
-      elem.setZero();  // Set each element to zero
-    }
+  for (auto& elem : vec) {
+    elem.setZero();  // Set each element to zero
+  }
 }
 
 // Function to initialize motion cases
-std::vector<scp::Vec13> initializeMotionCases() {
-    std::vector<scp::Vec13> xgs;
+std::vector<scp::Vec13> initializeMotionCases(bool is_granite) {
+  std::vector<scp::Vec13> xgs;
 
-    scp::Vec13 xg;
+  scp::Vec13 xg;
+
+  if (is_granite) {
 
     // Case 2: Motion in Y
     xg << -0.4, -0.4, -0.67, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
@@ -2394,52 +2396,72 @@ std::vector<scp::Vec13> initializeMotionCases() {
     // Case 11: Rotation + translation asymmetric motion in XY
     xg << 0.5, -0.3, -0.67, 0, 0, 0, 0, 0, 0.7068252, 0.7073883, 0, 0, 0;
     xgs.push_back(xg);
+  } else {
+    // Case 1: Motion in Y
+    xg << 10.28, -8.81, 4.30, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+    xgs.push_back(xg);
+    // Case 2: Rotation in place
+    // (angle-axis) (1.57 0 0 1) --> Quat x y z w (0 0 0.7068252 0.7073883)
+    xg << 10.28, -9.81, 4.30, 0, 0, 0, 0, 0, 0.7068252, 0.7073883, 0, 0, 0;
+    xgs.push_back(xg);
+  }
 
-    return xgs;
+  return xgs;
 }
 
 // Function to process a single problem instance
 void processProblemInstance(scp::TOP &top_eg, const scp::Vec13 &xg, const Eigen::AlignedBox3d &vbox, int problemIndex) {
+  if (top_eg.is_granite) {
     top_eg.x0 << -0.4, 0.4, -0.67, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
-    top_eg.xg = xg;
-    clearToZeros(top_eg.Xprev);
-    clearToZeros(top_eg.Uprev);
+  } else {
+    top_eg.x0 << 10.28, -9.81, 4.30, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+  }
+  top_eg.xg = xg;
+  clearToZeros(top_eg.Xprev);
+  clearToZeros(top_eg.Uprev);
 
+  if (top_eg.is_granite) {
     if (vbox.isEmpty()) {
         top_eg.keep_out_zones_.clear();
     } else {
         top_eg.keep_out_zones_.clear();
         top_eg.keep_out_zones_.push_back(vbox);
     }
+  }
 
-    if (!top_eg.Solve()) {
-        std::string fname = "optim_trajectory_" + std::to_string(problemIndex) + ".txt";
-        scp::Vec13Vec empty_Xprev;
-        scp::Vec6Vec empty_Uprev;
-        top_eg.WriteTrajectoryToFile(empty_Xprev, empty_Uprev, fname);
-        std::cout << "Failure: Problem " << problemIndex << " could not be solved!" << std::endl;
-        std::cout << "--------------------------------------------" << std::endl;
-        return;
-    }
-
-    Eigen::VectorXd solution = top_eg.solver->getSolution();
-    for (size_t ii = 0; ii < top_eg.N; ii++) {
-        top_eg.Xprev[ii] = solution.segment(top_eg.state_dim * ii, top_eg.state_dim);
-    }
-    for (size_t ii = 0; ii < top_eg.N - 1; ii++) {
-        top_eg.Uprev[ii] = solution.segment(top_eg.state_dim * top_eg.N + top_eg.control_dim * ii, top_eg.control_dim);
-    }
-
-    std::string fname = "optim_trajectory_" + std::to_string(problemIndex) + ".txt";
-    top_eg.WriteTrajectoryToFile(top_eg.Xprev, top_eg.Uprev, fname);
-    std::cout << "Success: Problem " << problemIndex << " solved!" << std::endl;
+  if (!top_eg.Solve()) {
+    std::string fname = std::string((top_eg.is_granite) ? "granite" : "iss") + "_optim_trajectory_" + std::to_string(problemIndex) + ".txt";
+    scp::Vec13Vec empty_Xprev;
+    scp::Vec6Vec empty_Uprev;
+    top_eg.WriteTrajectoryToFile(empty_Xprev, empty_Uprev, fname);
+    std::cout << "Failure: Problem " << problemIndex << " could not be solved!" << std::endl;
     std::cout << "--------------------------------------------" << std::endl;
+    return;
+  }
+
+  Eigen::VectorXd solution = top_eg.solver->getSolution();
+  for (size_t ii = 0; ii < top_eg.N; ii++) {
+      top_eg.Xprev[ii] = solution.segment(top_eg.state_dim * ii, top_eg.state_dim);
+  }
+  for (size_t ii = 0; ii < top_eg.N - 1; ii++) {
+      top_eg.Uprev[ii] = solution.segment(top_eg.state_dim * top_eg.N + top_eg.control_dim * ii, top_eg.control_dim);
+  }
+
+  std::string fname = std::string((top_eg.is_granite) ? "granite" : "iss") + "_optim_trajectory_" + std::to_string(problemIndex) + ".txt";
+  top_eg.WriteTrajectoryToFile(top_eg.Xprev, top_eg.Uprev, fname);
+  std::cout << "Success: Problem " << problemIndex << " solved!" << std::endl;
+  std::cout << "--------------------------------------------" << std::endl;
 }
 
 int main() {
-    scp::TOP top_eg(20., 801);
+  bool test_granite_no_obs = false;
+  bool test_granite_large_obs = false;
+  bool test_granite_small_obs = false;
+  bool test_iss_no_obs = true;
+  bool test_iss_small_obs = false;
 
-    // Set granite environment and bounds
+  if (test_granite_no_obs || test_granite_large_obs || test_granite_small_obs) {
+    scp::TOP top_eg(20., 801);
     top_eg.is_granite = true;
     if (top_eg.is_granite) {
       top_eg.x_min(2) = -0.675;  // z coordinate
@@ -2451,28 +2473,51 @@ int main() {
     }
 
     // Initialize motion cases
-    std::vector<scp::Vec13> xgs = initializeMotionCases();
+    std::vector<scp::Vec13> xgs = initializeMotionCases(top_eg.is_granite);
 
-    // Process problems without obstacles
-    for (size_t i = 0; i < xgs.size(); ++i) {
-        processProblemInstance(top_eg, xgs[i], Eigen::AlignedBox3d(), i + 1);
+    if (test_granite_no_obs) {
+      // Process problems without obstacles
+      for (size_t i = 0; i < xgs.size(); ++i) {
+          processProblemInstance(top_eg, xgs[i], Eigen::AlignedBox3d(), i + 1);
+      }
     }
 
-    // Process problems with a large obstacle
-    Eigen::AlignedBox3d largeObstacle;
-    largeObstacle.extend(Eigen::Vector3d(-0.4, 0., -2));
-    largeObstacle.extend(Eigen::Vector3d(0., -0.4, 0));
-    for (size_t i = 0; i < xgs.size(); ++i) {
-        processProblemInstance(top_eg, xgs[i], largeObstacle, xgs.size() + i + 1);
+    if (test_granite_large_obs) {
+      // Process problems with a large obstacle
+      Eigen::AlignedBox3d largeObstacle;
+      largeObstacle.extend(Eigen::Vector3d(-0.4, 0., -2));
+      largeObstacle.extend(Eigen::Vector3d(0., -0.4, 0));
+      for (size_t i = 0; i < xgs.size(); ++i) {
+          processProblemInstance(top_eg, xgs[i], largeObstacle, xgs.size() + i + 1);
+      }
     }
 
-    // Process problems with a smaller obstacle
-    Eigen::AlignedBox3d smallObstacle;
-    smallObstacle.extend(Eigen::Vector3d(-0.25, 0., -2));
-    smallObstacle.extend(Eigen::Vector3d(0., -0.25, 0));
-    for (size_t i = 0; i < xgs.size(); ++i) {
-        processProblemInstance(top_eg, xgs[i], smallObstacle, 2 * xgs.size() + i + 1);
+    if (test_granite_small_obs) {
+      // Process problems with a smaller obstacle
+      Eigen::AlignedBox3d smallObstacle;
+      smallObstacle.extend(Eigen::Vector3d(-0.25, 0., -2));
+      smallObstacle.extend(Eigen::Vector3d(0., -0.25, 0));
+      for (size_t i = 0; i < xgs.size(); ++i) {
+          processProblemInstance(top_eg, xgs[i], smallObstacle, 2 * xgs.size() + i + 1);
+      }
     }
+  }
 
-    return 0;
+  if (test_iss_no_obs || test_iss_small_obs) {
+    scp::TOP top_eg(20., 801);
+    // Set ISS environment
+    top_eg.is_granite = false;
+    // Initialize motion cases
+    std::vector<scp::Vec13> xgs = initializeMotionCases(top_eg.is_granite);
+
+    if (test_iss_no_obs) {
+      // Process problems without obstacles
+      for (size_t i = 0; i < xgs.size(); ++i) {
+          processProblemInstance(top_eg, xgs[i], Eigen::AlignedBox3d(), i + 1);
+      }
+    }
+  }
+
+
+  return 0;
 }
