@@ -353,7 +353,8 @@ void TOP::InitTrajStraightline() {
       Uprev[ii](jj) = 0;
     }
   }
-  WriteTrajectoryToFile(Xprev, Uprev, (std::string(is_granite ? "granite" : "iss") + "_initial_straight_line_trajectory.txt"));
+  WriteTrajectoryToFile(Xprev, Uprev,
+                        (std::string(is_granite ? "granite" : "iss") + "_initial_straight_line_trajectory.txt"));
 }
 
 // void TOP::UpdateF(Vec7& f, Vec13& X, Vec6& U) {
@@ -508,10 +509,14 @@ Mat4x3 TOP::CalculateQMat(const Vec4& quaternion) {
 
     // Construct Q_mat
     Mat4x3 Q_mat;
-    Q_mat << -q_x, -q_y, -q_z,
-              q_w, -q_z,  q_y,
-              q_z,  q_w, -q_x,
-             -q_y,  q_x,  q_w;
+    // Q_mat << -q_x, -q_y, -q_z,
+    //           q_w, -q_z,  q_y,
+    //           q_z,  q_w, -q_x,
+    //          -q_y,  q_x,  q_w;
+    Q_mat <<  q_w,  q_z, -q_y,
+             -q_z,  q_w,  q_x,
+              q_y, -q_x,  q_w,
+             -q_x, -q_y, -q_z;
 
     return Q_mat;
 }
@@ -629,56 +634,55 @@ void TOP::SetSimpleConstraints() {
     NormalizeQuaternions();
     std::vector<Eigen::Triplet<double>> dynamics_triplets;
     for (size_t ii = 0; ii < N - 1; ii++) {
-        // Quaternion kinematics update
-        for (size_t jj = 0; jj < 4; jj++) {
-            for (size_t kk = 0; kk < 3; kk++) {
-                // Quaternion update: q_{i+1} = q_i + 0.5 * Q(q_i) * omega_i * dt
-
-                // Compute QMat dynamically for quaternion at time step `ii`
-                Eigen::Vector4d q_i = Xprev[ii].segment(6, 4);
-                // Eigen::Vector4d q_i = X.segment<4>(ii * state_dim + pos_dim + lin_vel_dim);
-                Eigen::Matrix<double, 4, 3> QMat = CalculateQMat(q_i);
-
-                dynamics_triplets.emplace_back(row_idx, ii * state_dim + pos_dim + lin_vel_dim + jj, -1.0);  // -q_i
-                dynamics_triplets.emplace_back(row_idx, ii * state_dim + pos_dim + lin_vel_dim + quat_dim + kk,
-                                               -0.5 * dh * QMat(jj, kk));  // -0.5 * Q_mat * omega_i * dt
-                dynamics_triplets.emplace_back(row_idx, (ii + 1) * state_dim + pos_dim + lin_vel_dim + jj,
-                                               1.0);  // q_{i+1}
-            }
-            // Enforce quaternion normalization at time step `ii+1`
-            if (jj == 3) {  // After processing all quaternion components
-              decimal_t q_norm = Xprev[ii+1].segment(6, 4).norm();
-              if (q_norm > 1e-6) {
-                Xprev[ii].segment(6, 4) /= q_norm;
-              }
-            }
-            lower_bound(row_idx) = 0.0;
-            upper_bound(row_idx) = 0.0;
-            ++row_idx;
+      // Quaternion kinematics update
+      // Quaternion update: q_{i+1} = q_i + 0.5 * Q(q_i) * omega_i * dt
+      // Compute QMat dynamically for quaternion at time step `ii`
+      Eigen::Vector4d q_i = Xprev[ii].segment(6, 4);
+      Eigen::Matrix<double, 4, 3> QMat = CalculateQMat(q_i);
+      for (size_t jj = 0; jj < 4; jj++) {
+        for (size_t kk = 0; kk < 3; kk++) {
+          dynamics_triplets.emplace_back(row_idx, ii * state_dim + pos_dim + lin_vel_dim + jj, -1.0);  // -q_i
+          dynamics_triplets.emplace_back(row_idx, ii * state_dim + pos_dim + lin_vel_dim + quat_dim + kk,
+                                         -0.5 * dh * QMat(jj, kk));  // -0.5 * Q_mat * omega_i * dt
+          dynamics_triplets.emplace_back(row_idx, (ii + 1) * state_dim + pos_dim + lin_vel_dim + jj,
+                                         1.0);  // q_{i+1}
         }
-
-        // Angular velocity update
-        for (size_t jj = 0; jj < 3; jj++) {
-            // omega_{i+1} = omega_i + J^{-1} * (u_torque - omega_i cross (J * omega_i)) * dt
-            dynamics_triplets.emplace_back(row_idx, ii * state_dim + pos_dim + lin_vel_dim + quat_dim + jj,
-                                           -1.0);  // -omega_i
-            dynamics_triplets.emplace_back(row_idx, N * state_dim + ii * control_dim + control_dim_lin + jj,
-                                           -dh / J(jj, jj));  // -u_torque * dt / J
-            dynamics_triplets.emplace_back(row_idx, (ii + 1) * state_dim + pos_dim + lin_vel_dim + quat_dim + jj,
-                                           1.0);  // omega_{i+1}
-
-            lower_bound(row_idx) = 0.0;
-            upper_bound(row_idx) = 0.0;
-            ++row_idx;
+        // Enforce quaternion normalization at time step `ii+1`
+        if (jj == 3) {  // After processing all quaternion components
+          decimal_t q_norm = Xprev[ii + 1].segment(6, 4).norm();
+          if (q_norm > 1e-6) {
+            Xprev[ii].segment(6, 4) /= q_norm;
+          }
         }
+        lower_bound(row_idx) = 0.0;
+        upper_bound(row_idx) = 0.0;
+        ++row_idx;
+      }
+
+      // Angular velocity update
+      // Calculate frot_mat = J^{-1} * (-omega_i cross (J * omega_i))
+      Eigen::Vector3d omega_i = Xprev[ii].segment(10, 3);
+      Eigen::Vector3d frot_mat = J.inverse() * (-omega_i.cross(J * omega_i));
+      for (size_t jj = 0; jj < 3; jj++) {
+        // omega_{i+1} = omega_i + J^{-1} * (u_torque - omega_i cross (J * omega_i)) * dt
+        dynamics_triplets.emplace_back(row_idx, ii * state_dim + pos_dim + lin_vel_dim + quat_dim + jj,
+                                       -1.0);  // -omega_i
+        dynamics_triplets.emplace_back(row_idx, N * state_dim + ii * control_dim + control_dim_lin + jj,
+                                       -dh / J(jj, jj));  // -u_torque * dt / J
+        dynamics_triplets.emplace_back(row_idx, (ii + 1) * state_dim + pos_dim + lin_vel_dim + quat_dim + jj,
+                                       1.0);  // omega_{i+1}
+
+        lower_bound(row_idx) = frot_mat(jj);
+        upper_bound(row_idx) = frot_mat(jj);
+        ++row_idx;
+      }
     }
 
     // Add rotational dynamics constraints to A matrix
     for (const auto& triplet : dynamics_triplets) {
-        linear_con_mat.coeffRef(triplet.row(), triplet.col()) = triplet.value();
+      linear_con_mat.coeffRef(triplet.row(), triplet.col()) = triplet.value();
     }
   }
-
 
   if (enforce_force_norm) {
     // Force constraints
@@ -2349,7 +2353,6 @@ std::vector<scp::Vec13> initializeMotionCases(bool is_granite) {
   scp::Vec13 xg;
 
   if (is_granite) {
-
     // Case 2: Motion in Y
     xg << -0.4, -0.4, -0.67, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
     xgs.push_back(xg);
@@ -2430,7 +2433,8 @@ void processProblemInstance(scp::TOP &top_eg, const scp::Vec13 &xg, const Eigen:
   }
 
   if (!top_eg.Solve()) {
-    std::string fname = std::string((top_eg.is_granite) ? "granite" : "iss") + "_optim_trajectory_" + std::to_string(problemIndex) + ".txt";
+    std::string fname = std::string((top_eg.is_granite) ? "granite" : "iss") + "_optim_trajectory_" +
+                        std::to_string(problemIndex) + ".txt";
     scp::Vec13Vec empty_Xprev;
     scp::Vec6Vec empty_Uprev;
     top_eg.WriteTrajectoryToFile(empty_Xprev, empty_Uprev, fname);
@@ -2447,7 +2451,8 @@ void processProblemInstance(scp::TOP &top_eg, const scp::Vec13 &xg, const Eigen:
       top_eg.Uprev[ii] = solution.segment(top_eg.state_dim * top_eg.N + top_eg.control_dim * ii, top_eg.control_dim);
   }
 
-  std::string fname = std::string((top_eg.is_granite) ? "granite" : "iss") + "_optim_trajectory_" + std::to_string(problemIndex) + ".txt";
+  std::string fname =
+    std::string((top_eg.is_granite) ? "granite" : "iss") + "_optim_trajectory_" + std::to_string(problemIndex) + ".txt";
   top_eg.WriteTrajectoryToFile(top_eg.Xprev, top_eg.Uprev, fname);
   std::cout << "Success: Problem " << problemIndex << " solved!" << std::endl;
   std::cout << "--------------------------------------------" << std::endl;
@@ -2507,6 +2512,7 @@ int main() {
     scp::TOP top_eg(20., 801);
     // Set ISS environment
     top_eg.is_granite = false;
+    top_eg.enforce_obs_avoidance_const = false;
     // Initialize motion cases
     std::vector<scp::Vec13> xgs = initializeMotionCases(top_eg.is_granite);
 
