@@ -353,8 +353,9 @@ void TOP::InitTrajStraightline() {
       Uprev[ii](jj) = 0;
     }
   }
-  WriteTrajectoryToFile(Xprev, Uprev,
-                        (std::string(is_granite ? "granite" : "iss") + "_initial_straight_line_trajectory.txt"));
+  std::string fname =
+    "output_trajs/" + std::string(is_granite ? "granite" : "iss") + "_initial_straight_line_trajectory.txt";
+  WriteTrajectoryToFile(Xprev, Uprev, fname);
 }
 
 // void TOP::UpdateF(Vec7& f, Vec13& X, Vec6& U) {
@@ -2454,9 +2455,10 @@ void processProblemInstance(scp::TOP &top_eg, const scp::Vec13 &xg, const Eigen:
     std::cout << "After adding 1, Number of obstacles: " << top_eg.keep_out_zones_.size() << std::endl;
   }
 
-  if (!top_eg.Solve()) {
-    std::string fname = std::string((top_eg.is_granite) ? "granite" : "iss") + "_optim_trajectory_" +
+  std::string fname = "output_trajs/" + std::string((top_eg.is_granite) ? "granite" : "iss") + "_optim_trajectory_" +
                         std::to_string(problemIndex) + ".txt";
+
+  if (!top_eg.Solve()) {
     scp::Vec13Vec empty_Xprev;
     scp::Vec6Vec empty_Uprev;
     top_eg.WriteTrajectoryToFile(empty_Xprev, empty_Uprev, fname);
@@ -2473,9 +2475,8 @@ void processProblemInstance(scp::TOP &top_eg, const scp::Vec13 &xg, const Eigen:
       top_eg.Uprev[ii] = solution.segment(top_eg.state_dim * top_eg.N + top_eg.control_dim * ii, top_eg.control_dim);
   }
 
-  std::string fname =
-    std::string((top_eg.is_granite) ? "granite" : "iss") + "_optim_trajectory_" + std::to_string(problemIndex) + ".txt";
   top_eg.WriteTrajectoryToFile(top_eg.Xprev, top_eg.Uprev, fname);
+  std::cout << "Trajectory written to file: " << fname << std::endl;
   std::cout << "Success: Problem " << problemIndex << " solved!" << std::endl;
   std::cout << "--------------------------------------------" << std::endl;
 }
