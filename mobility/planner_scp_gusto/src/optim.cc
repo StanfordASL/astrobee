@@ -152,7 +152,7 @@ size_t TOP::GetNumTOPConstraints() {
   size_t num_lin_dynamics_constr = state_dim_lin * (N - 1);   // (x,y,z) and (vx,vy,vz) for each time step
   size_t num_rot_dynamics_constr = state_dim_nlin * (N - 1);  // (q0,q1,q2,q3) and (wx,wy,wz) for each time step
   size_t num_obs_avoidance_const = (N - 1) * pos_dim;               // Exactly 3 (XYZ) constraints per time step
-  size_t num_state_bounds_const = N * state_dim;
+  size_t num_state_bounds_const = N * pos_dim;                      // 3 (XYZ) constraints per time step
   size_t num_total_constr = (enforce_init_cond ? num_init_cond_constr : 0) +
                            (enforce_final_cond ? num_final_cond_constr : 0) +
                            (enforce_lin_dynamics ? num_lin_dynamics_constr : 0) +
@@ -1048,10 +1048,12 @@ void TOP::SetSimpleConstraints() {
   if (enforce_state_bounds) {
     std::vector<Eigen::Triplet<double>> state_bounds_triplets;
     for (size_t ii = 0; ii < N; ii++) {
-      for (size_t jj = 0; jj < state_dim; jj++) {
+      for (size_t jj = 0; jj < 3; jj++) {  // x, y, z only for now
         linear_con_mat.coeffRef(row_idx, ii * state_dim + jj) = 1.0;
-        lower_bound(row_idx) = x_min[jj];
-        upper_bound(row_idx) = x_max[jj];
+        lower_bound(row_idx) = MinPos()[jj];
+        upper_bound(row_idx) = MaxPos()[jj];
+        std::cout << "Setting state bounds for state " << ii << " dim " << jj << " to " << MinPos()[jj] << " and "
+                  << MaxPos()[jj] << std::endl;
         ++row_idx;
       }
     }
@@ -2478,12 +2480,105 @@ void processProblemInstance(scp::TOP &top_eg, const scp::Vec13 &xg, const Eigen:
   std::cout << "--------------------------------------------" << std::endl;
 }
 
+void debugObsAvoidance() {
+  // original ko_min:    0 -9.2  4.4
+  // original ko_max: 1500   -8  4.8
+  // pose min: -1e+30 -1e+30 -1e+30
+  // pose max: 1e+30 1e+30 1e+30
+  // ko_min: -0.1 -9.3  4.3
+  // ko_max: 1500.1   -7.9    4.9
+  // ko_center:  750 -8.6  4.6
+  scp::Vec3 min_pos = scp::Vec3(-1e+30, -1e+30, -1e+30);
+  scp::Vec3 max_pos = scp::Vec3(1e+30, 1e+30, 1e+30);
+  // scp::Vec3 ko_min = scp::Vec3(-0.1, -9.3, 4.3);
+  // scp::Vec3 ko_max = scp::Vec3(1500.1, -7.9, 4.9);
+  // scp::Vec3 ko_center = scp::Vec3(750, -8.6, 4.6);
+
+  scp::Vec3 ko_min = scp::Vec3(-3.0, -2.0, -1.0);
+  scp::Vec3 ko_max = scp::Vec3(3.0, 2.0, 1.0);
+  scp::Vec3 ko_center = scp::Vec3(0.0, 0.0, 0.0);
+
+  std::cout << "ko_min: " << ko_min.transpose() << std::endl;
+  std::cout << "ko_max: " << ko_max.transpose() << std::endl;
+
+  std::vector<scp::Vec3> test_points;
+  test_points.push_back(scp::Vec3(-4, -0.5, -0.5));  // Xprev[ii]
+  test_points.push_back(scp::Vec3(-2.5, -0.5, -0.5));  // Xprev[ii]
+  test_points.push_back(scp::Vec3(-2.5, -2.5, -0.5));  // Xprev[ii]
+
+  test_points.push_back(scp::Vec3(2.5, -3.0, 0.5));  // Xprev[ii]
+  test_points.push_back(scp::Vec3(2.5, 1.5, 0.5));  // Xprev[ii]
+  test_points.push_back(scp::Vec3(2.5, 1.5, 1.5));  // Xprev[ii]
+
+  // test_points.push_back(scp::Vec3(0.5, -2, 0.5));  // Xprev[ii]
+  // test_points.push_back(scp::Vec3(0.5, -0.5, -2));  // Xprev[ii]
+  // test_points.push_back(scp::Vec3(0.5, -0.5, -0.5));  // Xprev[ii]
+
+  // test_points.push_back(scp::Vec3(10.28, -9.25, 5.0));  // Xprev[ii]
+
+  // scp::Vec3 test_point = scp::Vec3(10.28, -9.25, 5.0); // Xprev[ii]
+
+  for (size_t i = 0; i < test_points.size(); ++i) {
+    scp::Vec3 test_point = test_points[i];
+
+    std::cout << " ------------- " << std::endl;
+    std::cout << " test point: " << test_point.transpose() << std::endl;
+
+
+    int row_idx = 0;
+    for (size_t jj = 0; jj < 3; jj++) {
+      scp::decimal_t lb = min_pos[jj];
+      scp::decimal_t ub = max_pos[jj];
+      // lb < x < ub
+      // Either ko_max < x < ub or lb < x < ko_min
+      bool active_proj = true;
+      for (size_t kk = 0; kk < 3; kk++) {
+        if (kk == jj) {
+          continue;
+        }
+        if ((test_point(kk) > ko_max[kk]) || (test_point(kk) < ko_min[kk])) {
+          // not active projection
+          active_proj = false;
+          // std::cout << "Seeing x y z " << std::to_string(Xprev[ii](0)) << ", " << std::to_string(Xprev[ii](1)) <<
+          // ", " << std::to_string(Xprev[ii](2)) << " and judging that no constraint is required." << std::endl;
+          break;
+        }
+      }
+      if (active_proj) {
+        if (test_point(jj) >= ko_center[jj]) {
+          lb = ko_max[jj];
+        } else {
+          ub = ko_min[jj];
+        }
+        // std::cout << "Seeing x y z " << std::to_string(Xprev[ii](0)) << ", " << std::to_string(Xprev[ii](1)) << ",
+        // " << std::to_string(Xprev[ii](2)) << " and judging that " << std::to_string(jj) << " needs CONSTRAINT " <<
+        // std::to_string(lb) << ", " << std::to_string(ub) << "." << std::endl;
+      }
+      // lb < x < ub
+      std::cout << "Constraint " << std::to_string(row_idx) << std::endl;
+      std::string var = (jj == 0) ? "x" : (jj == 1) ? "y" : "z";
+      std::cout << " " << std::to_string(lb) << " <= " << var << " <= " <<
+                  std::to_string(ub) << std::endl;
+      // linear_con_mat.coeffRef(row_idx, state_dim * ii + jj) = 1.0;
+      // lower_bound(row_idx) = lb;
+      // upper_bound(row_idx) = ub;
+      row_idx++;
+    }
+    std::cout << " ------------- " << std::endl;
+  }
+}
+
 int main() {
   bool test_granite_no_obs = false;
   bool test_granite_large_obs = false;
   bool test_granite_small_obs = false;
   bool test_iss_no_obs = true;
-  bool test_iss_small_obs = true;
+  bool test_iss_small_obs = false;
+  bool test_iss_large_obs = false;
+
+  bool test_debug_obs_avoidance = false;
+
+  int num_problems = 0;
 
   if (test_granite_no_obs || test_granite_large_obs || test_granite_small_obs) {
     scp::TOP top_eg(20., 801);
@@ -2503,7 +2598,8 @@ int main() {
     if (test_granite_no_obs) {
       // Process problems without obstacles
       for (size_t i = 0; i < xgs.size(); ++i) {
-          processProblemInstance(top_eg, xgs[i], Eigen::AlignedBox3d(), i + 1);
+        num_problems++;
+        processProblemInstance(top_eg, xgs[i], Eigen::AlignedBox3d(), num_problems);
       }
     }
 
@@ -2513,7 +2609,8 @@ int main() {
       largeObstacle.extend(Eigen::Vector3d(-0.4, 0., -2));
       largeObstacle.extend(Eigen::Vector3d(0., -0.4, 0));
       for (size_t i = 0; i < xgs.size(); ++i) {
-          processProblemInstance(top_eg, xgs[i], largeObstacle, xgs.size() + i + 1);
+        num_problems++;
+        processProblemInstance(top_eg, xgs[i], largeObstacle, num_problems);
       }
     }
 
@@ -2523,37 +2620,69 @@ int main() {
       smallObstacle.extend(Eigen::Vector3d(-0.25, 0., -2));
       smallObstacle.extend(Eigen::Vector3d(0., -0.25, 0));
       for (size_t i = 0; i < xgs.size(); ++i) {
-          processProblemInstance(top_eg, xgs[i], smallObstacle, 2 * xgs.size() + i + 1);
+        num_problems++;
+        processProblemInstance(top_eg, xgs[i], smallObstacle, num_problems);
       }
     }
   }
+
+  num_problems = 0;  // Reset problem counter for ISS cases
 
   if (test_iss_no_obs || test_iss_small_obs) {
     scp::TOP top_eg(20., 801);
     // Set ISS environment
     top_eg.is_granite = false;
     top_eg.enforce_obs_avoidance_const = false;
+
+    // // Set (rough) ISS bounds
+    // top_eg.x_min(0) = -100.0;
+    // top_eg.x_max(0) = 100.0;
+    // top_eg.x_min(1) = -100.0;
+    // top_eg.x_max(1) = 100.0;
+    // top_eg.x_min(2) = -100.0;
+    // top_eg.x_max(2) = 100.0;
+
     // Initialize motion cases
     std::vector<scp::Vec13> xgs = initializeMotionCases(top_eg.is_granite);
 
     if (test_iss_no_obs) {
       // Process problems without obstacles
       for (size_t i = 0; i < xgs.size(); ++i) {
-          processProblemInstance(top_eg, xgs[i], Eigen::AlignedBox3d(), i + 1);
+        num_problems++;
+        processProblemInstance(top_eg, xgs[i], Eigen::AlignedBox3d(), num_problems);
       }
     }
     if (test_iss_small_obs) {
       // Process problems with a smaller obstacle
       Eigen::AlignedBox3d smallObstacle;
-      smallObstacle.extend(Eigen::Vector3d(0.0, -9.2, 4.4));
-      smallObstacle.extend(Eigen::Vector3d(20.0, -8.0, 4.8));
+      // smallObstacle.extend(Eigen::Vector3d(0.0, -9.2, 4.4));
+      // smallObstacle.extend(Eigen::Vector3d(1500.0, -8.0, 4.8));
+      // smallObstacle.extend(Eigen::Vector3d(10.0, -9.2, 4.6));
+      // smallObstacle.extend(Eigen::Vector3d(10.6, -9.0, 4.7));
+      smallObstacle.extend(Eigen::Vector3d(10.0, -9.2, 100.0));
+      smallObstacle.extend(Eigen::Vector3d(10.6, -9.0, 200.0));
       top_eg.enforce_obs_avoidance_const = true;
       for (size_t i = 0; i < xgs.size(); ++i) {
-          processProblemInstance(top_eg, xgs[i], smallObstacle, xgs.size() + i + 1);
+        num_problems++;
+        processProblemInstance(top_eg, xgs[i], smallObstacle, num_problems);
+      }
+    }
+    if (test_iss_large_obs) {
+      // Process problems with a larger obstacle
+      Eigen::AlignedBox3d obstacle;
+      obstacle.extend(Eigen::Vector3d(-1500.0, -9.2, 4.4));
+      obstacle.extend(Eigen::Vector3d(1500.0, -8.0, 4.8));
+      top_eg.enforce_obs_avoidance_const = true;
+      for (size_t i = 0; i < xgs.size(); ++i) {
+        num_problems++;
+        processProblemInstance(top_eg, xgs[i], obstacle, num_problems);
       }
     }
   }
 
+  if (test_debug_obs_avoidance) {
+    debugObsAvoidance();
+  }
 
   return 0;
 }
