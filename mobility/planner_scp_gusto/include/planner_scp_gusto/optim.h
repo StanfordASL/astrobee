@@ -171,6 +171,10 @@ class TOP {
   void SetSimpleConstraints();
   void SetSimpleCosts();
 
+  void PrettyPrintConstraints();
+  std::string ConvertiiToString(size_t ii);
+
+
   void UpdateSimpleConstraints();
   void UpdateSimpleCosts();
 

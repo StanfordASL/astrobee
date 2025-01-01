@@ -55,7 +55,7 @@ TOP::TOP(decimal_t Tf_, int N_)
   enforce_lin_vel_norm = false;
   enforce_ang_vel_norm = false;
   enforce_trust_region_const = false;
-  enforce_obs_avoidance_const = true;
+  enforce_obs_avoidance_const = false;
   enforce_state_bounds = false;
 
   penalize_total_force = false;
@@ -101,7 +101,7 @@ TOP::TOP(decimal_t Tf_, int N_)
   keep_in_zones_.clear();
   keep_out_zones_.clear();
 
-  x_max << OsqpEigen::INFTY, OsqpEigen::INFTY, OsqpEigen::INFTY,
+  x_max << 100.0, 100.0, 100.0,
     desired_vel_, desired_vel_, desired_vel_,
     1, 1, 1, 1,
     desired_omega_, desired_omega_, desired_omega_;
@@ -270,8 +270,6 @@ void TOP::UpdateProblemDimension(size_t N_) {
 
   for (size_t ii = 0; ii < num_cons; ii++) {
     lower_bound(ii) = -OsqpEigen::INFTY;
-    // TODO(somrita): Remove
-    // lower_bound(ii) = 0.0;
     upper_bound(ii) = OsqpEigen::INFTY;
   }
 
@@ -1047,14 +1045,13 @@ void TOP::SetSimpleConstraints() {
   }
 
   if (enforce_state_bounds) {
-    std::vector<Eigen::Triplet<double>> state_bounds_triplets;
     for (size_t ii = 0; ii < N; ii++) {
       for (size_t jj = 0; jj < 3; jj++) {  // x, y, z only for now
         linear_con_mat.coeffRef(row_idx, ii * state_dim + jj) = 1.0;
         lower_bound(row_idx) = MinPos()[jj];
         upper_bound(row_idx) = MaxPos()[jj];
-        std::cout << "Setting state bounds for state " << ii << " dim " << jj << " to " << MinPos()[jj] << " and "
-                  << MaxPos()[jj] << std::endl;
+        // std::cout << "Setting state bounds for state " << ii << " dim " << jj << " to " << MinPos()[jj] << " and "
+        //           << MaxPos()[jj] << std::endl;
         ++row_idx;
       }
     }
@@ -1089,6 +1086,114 @@ void TOP::SetSimpleConstraints() {
     }
   }
   std::cout << "Finished setting simple constraints" << std::endl;
+  PrettyPrintConstraints();
+}
+
+void TOP::PrettyPrintConstraints() {
+  std::string fname = "pretty_constraints.txt";
+  std::ofstream outFile(fname);
+  if (!outFile.is_open()) {
+      std::cerr << "Error opening file for writing!" << std::endl;
+      return;
+  }
+  std::cout << "Printing constraints to file " << fname << std::endl;
+
+  size_t num_vars = GetNumTOPVariables();
+  size_t num_cons = GetNumTOPConstraints();
+  size_t max_print = 15000;
+
+  for (size_t cc = 0; cc < num_cons; cc++) {
+    if (cc > max_print) {
+      break;
+    }
+    // TODO(somrita): add label for constraint type
+    outFile << "Constraint " << cc << ": ";
+    outFile << lower_bound(cc) << " <= ";
+    bool started_printing = false;
+    for (size_t ii = 0; ii < num_vars; ii++) {
+      if (linear_con_mat.coeff(cc, ii) != 0) {
+        if (started_printing) {
+          outFile << " + ";
+        }
+        if (linear_con_mat.coeff(cc, ii) == 1) {
+          outFile << ConvertiiToString(ii) << " ";
+          started_printing = true;
+        } else if (linear_con_mat.coeff(cc, ii) == -1) {
+          outFile << "-" << ConvertiiToString(ii) << " ";
+          started_printing = true;
+        } else {
+          outFile << linear_con_mat.coeff(cc, ii) << " " << ConvertiiToString(ii) << " ";
+          started_printing = true;
+        }
+      }
+    }
+    outFile << " <= " << upper_bound(cc) << std::endl;
+  }
+
+  outFile.close();
+  return;
+}
+
+std::string TOP::ConvertiiToString(size_t ii) {
+  size_t num_vars = GetNumTOPVariables();
+  std::string var_name = "";
+  if (ii < state_dim * N) {
+    size_t ts = ii / state_dim;
+    size_t jj = ii % state_dim;
+    if (jj == 0) {
+      var_name += "x";
+    } else if (jj == 1) {
+      var_name += "y";
+    } else if (jj == 2) {
+      var_name += "z";
+    } else if (jj == 3) {
+      var_name += "vx";
+    } else if (jj == 4) {
+      var_name += "vy";
+    } else if (jj == 5) {
+      var_name += "vz";
+    } else if (jj == 6) {
+      var_name += "qx";
+    } else if (jj == 7) {
+      var_name += "qy";
+    } else if (jj == 8) {
+      var_name += "qz";
+    } else if (jj == 9) {
+      var_name += "qw";
+    } else if (jj == 10) {
+      var_name += "wx";
+    } else if (jj == 11) {
+      var_name += "wy";
+    } else if (jj == 12) {
+      var_name += "wz";
+    } else {
+      std::cerr << "Unknown variable index: " << jj << std::endl;
+    }
+    var_name += " (t = " + std::to_string(ts) + ")";
+    return var_name;
+  } else if (ii < state_dim * N + control_dim * (N - 1)) {
+    size_t ts = (ii - state_dim * N) / control_dim;
+    size_t jj = (ii - state_dim * N) % control_dim;
+    if (jj == 0) {
+      var_name += "f1";
+    } else if (jj == 1) {
+      var_name += "f2";
+    } else if (jj == 2) {
+      var_name += "f3";
+    } else if (jj == 3) {
+      var_name += "m1";
+    } else if (jj == 4) {
+      var_name += "m2";
+    } else if (jj == 5) {
+      var_name += "m3";
+    } else {
+      std::cerr << "Unknown variable index: " << jj << std::endl;
+    }
+    var_name += " (t = " + std::to_string(ts) + ")";
+    return var_name;
+  } else {
+    std::cerr << "ii is out of bounds: " << ii << " max variables = " << num_vars << std::endl;
+  }
 }
 
 void TOP::SetSimpleCosts() {
@@ -1304,6 +1409,17 @@ bool TOP::Solve() {
 }
 
 void TOP::ValidationChecks() {
+  // Check maximum and minimum positions
+  Vec3 min_pos = Xprev[0].segment(0, 3);
+  Vec3 max_pos = Xprev[0].segment(0, 3);
+  for (size_t ii = 0; ii < N; ii++) {
+    Vec3 pos = Xprev[ii].segment(0, 3);
+    min_pos = pos.cwiseMin(min_pos);
+    max_pos = pos.cwiseMax(max_pos);
+  }
+  std::cout << "Minimum position in solution: " << min_pos.transpose() << std::endl;
+  std::cout << "Maximum position in solution: " << max_pos.transpose() << std::endl;
+
   // Check boundary conditions
   decimal_t eps = 1e-5;
   Vec13 soln_x0 = Xprev[0];
