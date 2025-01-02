@@ -31,7 +31,58 @@
 
 #include "OsqpEigen/OsqpEigen.h"
 
+#ifdef PROFILING
+#undef PROFILING
+#endif
+#include <torch/torch.h>
+
 namespace scp {
+
+// Define the NeuralNet struct for warm start
+struct Net : torch::nn::Module {
+  Net() {
+    fc1 = register_module("fc1", torch::nn::Linear(26, 128));
+    fc2 = register_module("fc2", torch::nn::Linear(128, 64));
+    fc3 = register_module("fc3", torch::nn::Linear(64, 12));
+  }
+
+  // // Load weights from a file
+  // void loadWeights(const std::string& filename) {
+  //   // torch::load(*this, filename);
+  //   auto m = torch::jit::load(filename);
+  //   // Copy the weights to the model
+  //   for (torch::jit::script::Named<at::Tensor> p :
+  //       m.named_parameters(/*recurse=*/true)) {
+  //     for (torch::jit::script::Named<at::Tensor> p2 :
+  //         this->named_parameters(/*recurse=*/true)) {
+  //       if (p.name == p2.name) {
+  //         p2.value = p.value;
+  //       }
+  //     }
+  //   }
+  //   for (torch::jit::script::Named<at::Tensor> p :
+  //       m.named_parameters(/*recurse=*/true)) {
+  //     std::cout << p.name << ": " << p.value << "\n";
+  //   }
+  // }
+
+  // Method to initialize all weights to zero
+  void initializeWeightsToZero() {
+    for (auto& param : this->parameters()) {
+        param.data().zero_();
+    }
+  }
+
+  torch::Tensor forward(torch::Tensor x) {
+    x = torch::relu(fc1->forward(x.reshape({x.size(0), 26})));
+    x = torch::relu(fc2->forward(x));
+    x = torch::log_softmax(fc3->forward(x), /*dim=*/1);
+    return x;
+  }
+
+  // Use one of many "standard library" modules.
+  torch::nn::Linear fc1{nullptr}, fc2{nullptr}, fc3{nullptr};
+};
 
 class TOP {
  public:
@@ -155,6 +206,8 @@ class TOP {
   decimal_t max_time_;        // Max Tf
   decimal_t control_rate_;        // Control frequency
 
+  Net net;  // Neural network for warm start
+
   TOP(decimal_t Tf, int N);
 
   ~TOP();
@@ -223,6 +276,10 @@ class TOP {
   void ValidationChecks();
   void NormalizeQuaternions();
   void WriteTrajectoryToFile(const Vec13Vec& states, const Vec6Vec& controls, const std::string& filename);
+
+  Vec13 ForwardDynamics(Vec13 x, Vec6 u);
+  std::tuple<Vec6, Vec6> InferenceNN(Vec13 x0, Vec13 xg);
+  std::tuple<Vec13Vec, Vec6Vec> WarmStartFromNN(Vec13 x0, Vec13 xg);
 };
 
 }  //  namespace scp

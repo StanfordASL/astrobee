@@ -24,6 +24,7 @@
 #include <cmath>
 #include <string>
 #include <fstream>
+#include <tuple>
 
 #ifdef PROFILING
 #undef PROFILING
@@ -46,6 +47,12 @@ TOP::TOP(decimal_t Tf_, int N_)
   control_dim_lin = 3;
   control_dim_nlin = 3;
   dh = Tf / N;
+
+  // Network for warm start
+  // Set weights to zero
+  net.initializeWeightsToZero();
+  // OR Load weights from file
+  // net.loadWeights("path/to/net_weights.pt");
 
   // TODO(somrita): Implement all of these
   is_granite = false;
@@ -1661,7 +1668,7 @@ void TOP::PolishSolution() {
 }
 
 // NOTE: Functions below this point are not currently being used but may be good for future modularization.
-
+/*
 // void TOP::ComputeSignedDistances() {
 //   size_t n_obs = keep_out_zones_->size();
 
@@ -2446,6 +2453,8 @@ void TOP::PolishSolution() {
 //   return true;
 // }
 
+*/
+
 void TOP::WriteTrajectoryToFile(const Vec13Vec& states, const Vec6Vec& controls, const std::string& filename) {
   std::ofstream traj_file(filename);
   if (!traj_file.is_open()) {
@@ -2458,6 +2467,88 @@ void TOP::WriteTrajectoryToFile(const Vec13Vec& states, const Vec6Vec& controls,
     traj_file << std::endl;
   }
   traj_file.close();
+}
+
+Vec13 TOP::ForwardDynamics(Vec13 x, Vec6 u) {
+  Vec13 xp = Vec13::Zero();
+  // Extract position, velocity, and quaternion from x
+  Vec3 pos = x.segment(0, 3);
+  Vec3 vel = x.segment(3, 3);
+  Vec4 quat = x.segment(6, 4);
+  Vec3 ang_vel = x.segment(10, 3);
+  // Extract force and torque from u
+  Vec3 force = u.segment(0, 3);
+  Vec3 torque = u.segment(3, 3);
+  // Position update: x_{i+1} = x_i + v_i * dt
+  xp.segment(0, 3) = pos + vel * dh;
+
+  // Velocity update: v_{i+1} = v_i + u_j * dt / mass
+  xp.segment(3, 3) = vel + force * dh / mass;
+
+  // // Quaternion update: q_{i+1} = q_i + 0.5 * Q(q_i) * omega_i * dt
+  // Eigen::Matrix<double, 4, 3> QMat = CalculateQMat(quat);
+  // xp.segment(6, 4) = quat + 0.5 * quat * QMat * ang_vel * dh;
+  xp.segment(6, 4) = quat;  // Placeholder: no update
+
+  // // Angular velocity update: omega_{i+1} = omega_i + J^{-1} * (u_torque - omega_i cross (J * omega_i)) * dt
+  // Eigen::Vector3d frot_mat = J.inverse() * (torque - ang_vel.cross(J * ang_vel));
+  // xp.segment(10, 3) = ang_vel + frot_mat * dh;
+  xp.segment(10, 3) = ang_vel;  // Placeholder: no update
+  return xp;
+}
+
+std::tuple<Vec6, Vec6> TOP::InferenceNN(Vec13 x0, Vec13 xg) {
+  std::cout << "Inference from neural network" << std::endl;
+  // Create input of length 26 from x0 and xg
+  torch::Tensor input = torch::zeros({1, 26});
+  for (size_t i = 0; i < 13; ++i) {
+    input[0][i] = x0[i];
+    input[0][i + 13] = xg[i];
+  }
+  std::cout << "Input tensor: " << input << std::endl;
+  // Perform inference
+  torch::Tensor output = TOP::net.forward(input);
+  std::cout << "Output tensor: " << output << std::endl;
+  // Extract U0 and Uf from output
+  Vec6 U0, Uf;
+  for (size_t i = 0; i < 6; ++i) {
+    U0[i] = output[0][i].item<float>();
+    Uf[i] = output[0][i + 6].item<float>();
+  }
+  return std::make_tuple(U0, Uf);
+}
+
+/* Function to warm start from neural network */
+std::tuple<Vec13Vec, Vec6Vec> TOP::WarmStartFromNN(Vec13 x0, Vec13 xg) {
+  std::cout << "Warm starting from neural network" << std::endl;
+  bool simplify = false;
+  if (simplify) {
+    // Simple case: just set to initial and final states
+    Vec13Vec Xprev;
+    Vec6Vec Uprev;
+    Xprev.push_back(x0);
+    Xprev.push_back(xg);
+    Uprev.push_back(Vec6::Zero());
+    Uprev.push_back(Vec6::Zero());
+    return std::make_tuple(Xprev, Uprev);
+  }
+  // Call InferenceNN(x0, xg) to get U0, Uf
+  Vec6 U0, Uf;
+  std::tie(U0, Uf) = InferenceNN(x0, xg);
+  // Interpolate linearly for N steps to get Uprev
+  Vec6Vec Uprev;
+  for (size_t i = 0; i < N; ++i) {
+    Vec6 U = U0 + (i/(N-1))*(Uf - U0);
+    Uprev.push_back(U);
+  }
+  // Use dynamics to get Xprev
+  Vec13Vec Xprev;
+  Xprev.push_back(x0);
+  for (size_t i = 0; i < N; ++i) {
+    Vec13 X = ForwardDynamics(Xprev[i], Uprev[i]);
+    Xprev.push_back(X);
+  }
+  return std::make_tuple(Xprev, Uprev);
 }
 
 }  //  namespace scp
@@ -2691,6 +2782,7 @@ void debugObsAvoidance() {
 }
 
 void test_cpp_torch() {
+  std::cout << "Testing C++ with PyTorch" << std::endl;
   torch::Tensor tensor = torch::rand({2, 3});
   std::cout << tensor << std::endl;
   return;
@@ -2700,11 +2792,13 @@ int main() {
   bool test_granite_no_obs = false;
   bool test_granite_large_obs = false;
   bool test_granite_small_obs = false;
-  bool test_iss_no_obs = true;
+  bool test_iss_no_obs = false;
   bool test_iss_small_obs = false;
   bool test_iss_large_obs = false;
 
   bool test_debug_obs_avoidance = false;
+
+  bool test_warm_start = true;
 
   int num_problems = 0;
 
@@ -2812,7 +2906,27 @@ int main() {
     debugObsAvoidance();
   }
 
-  test_cpp_torch();
+  if (test_warm_start) {
+    test_cpp_torch();
+    scp::TOP top(20., 801);
+    // Set ISS environment
+    top.is_granite = false;
+
+    scp::Vec13 x0;
+    scp::Vec13 xg;
+    x0 << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0, 0, 0, 1, 0, 0, 0;
+    xg << 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0, 0, 0, 1, 0, 0, 0;
+    std::cout << "x0: " << x0.transpose() << std::endl;
+    std::cout << "xg: " << xg.transpose() << std::endl;
+    scp::Vec13Vec Xprev;
+    scp::Vec6Vec Uprev;
+    std::tie(Xprev, Uprev) = top.WarmStartFromNN(x0, xg);
+    std::cout << "Warm start from neural network:" << std::endl;
+    std::cout << "Xprev initial: " << Xprev[0].transpose() << std::endl;
+    std::cout << "Xprev final: " << Xprev[Xprev.size() - 1].transpose() << std::endl;
+    std::cout << "Uprev initial: " << Uprev[0].transpose() << std::endl;
+    std::cout << "Uprev final: " << Uprev[Uprev.size() - 1].transpose() << std::endl;
+  }
 
   return 0;
 }
