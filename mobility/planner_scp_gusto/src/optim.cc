@@ -25,6 +25,11 @@
 #include <string>
 #include <fstream>
 
+#ifdef PROFILING
+#undef PROFILING
+#endif
+#include <torch/torch.h>
+
 namespace scp {
 
 TOP::TOP(decimal_t Tf_, int N_)
@@ -2685,6 +2690,12 @@ void debugObsAvoidance() {
   }
 }
 
+void test_cpp_torch() {
+  torch::Tensor tensor = torch::rand({2, 3});
+  std::cout << tensor << std::endl;
+  return;
+}
+
 int main() {
   bool test_granite_no_obs = false;
   bool test_granite_large_obs = false;
@@ -2800,6 +2811,8 @@ int main() {
   if (test_debug_obs_avoidance) {
     debugObsAvoidance();
   }
+
+  test_cpp_torch();
 
   return 0;
 }

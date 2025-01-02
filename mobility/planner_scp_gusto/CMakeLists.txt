@@ -39,6 +39,19 @@ find_package(OsqpEigen REQUIRED)
 find_package(Bullet REQUIRED)
 find_package(PCL REQUIRED COMPONENTS common)
 
+## Torch
+### Version: 1.12.1+cpu
+set(Torch_DIR "/home/enceladus/Downloads/libtorch/share/cmake/Torch")
+find_package(Torch REQUIRED)
+
+set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS} -D_GLIBCXX_USE_CXX11_ABI=1")
+
+link_directories(/home/enceladus/Downloads/libtorch/lib)
+
 # This is for cross-compilation support
 if (USE_CTC)
   set(OsqpEigen_ROOT_DIR ${ARM_CHROOT_DIR}/usr)
@@ -86,14 +99,16 @@ add_library(planner_scp_gusto
 )
 
 add_executable(optim src/optim.cc)
-target_link_libraries(optim ${catkin_LIBRARIES} ${BULLET_LIBRARIES} OsqpEigen::OsqpEigen)
+target_link_libraries(optim ${catkin_LIBRARIES} ${BULLET_LIBRARIES} OsqpEigen::OsqpEigen ${TORCH_LIBRARIES})
 
 add_executable(optim_simple src/simple/optim_simple.cc)
-target_link_libraries(optim_simple ${catkin_LIBRARIES} ${BULLET_LIBRARIES} OsqpEigen::OsqpEigen)
+target_link_libraries(optim_simple ${catkin_LIBRARIES} ${BULLET_LIBRARIES} OsqpEigen::OsqpEigen ${TORCH_LIBRARIES})
 
 add_dependencies(planner_scp_gusto ${catkin_EXPORTED_TARGETS})
-target_link_libraries(planner_scp_gusto ${catkin_LIBRARIES} ${BULLET_LIBRARIES})
+target_link_libraries(planner_scp_gusto ${catkin_LIBRARIES} ${BULLET_LIBRARIES} ${TORCH_LIBRARIES})
 target_link_libraries(planner_scp_gusto OsqpEigen::OsqpEigen)
+
+set_property(TARGET planner_scp_gusto PROPERTY CXX_STANDARD 17)
 
 #############
 ## Install ##
