@@ -3135,15 +3135,16 @@ int main() {
     scp::TOP top(20., 801);
     top.is_granite = false;
     // Get the first train_set_size files in output_trajs_for_NN
-    int train_set_size = 5;
+    int train_set_size = 27;
+    int num_epochs = 50000;
     std::vector<std::string> files;
     for (int i = 1; i <= train_set_size; i++) {
       files.push_back("output_trajs_for_NN/iss_optim_trajectory_" + std::to_string(i) + ".txt");
     }
-    top.TrainModel(files, 50);
+    top.TrainModel(files, num_epochs);
 
     std::string timestamp = getCurrentTimestamp();
-    std::string filename = "trained_model_" + std::to_string(train_set_size) + "_" + timestamp + ".pt";
+    std::string filename = "saved_NN_models/trained_model_" + std::to_string(train_set_size) + "_" + timestamp + ".pt";
     top.SaveModel(filename);
   }
 
@@ -3169,7 +3170,67 @@ int main() {
     std::cout << "Uprev final: " << Uprev[Uprev.size() - 1].transpose() << std::endl;
 
     // Load model
-    std::string fname = "trained_model_5_2025-01-03_00-03-15.pt";
+    std::string fname = "saved_NN_models/trained_model_5_2025-01-03_00-03-15.pt";
+    std::cout << "Using " << fname << " model" << std::endl;
+    top.LoadModel(fname);
+
+    x0.setZero();
+    xg.setZero();
+    Xprev.clear();
+    Uprev.clear();
+    x0 << 10.28, -9.81, 4.30, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+    xg << 10.48, -9.81, 4.30, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+    std::cout << "x0: " << x0.transpose() << std::endl;
+    std::cout << "xg: " << xg.transpose() << std::endl;
+    std::tie(Xprev, Uprev) = top.WarmStartFromNN(x0, xg);
+    std::cout << "Warm start from neural network:" << std::endl;
+    std::cout << "Xprev initial: " << Xprev[0].transpose() << std::endl;
+    std::cout << "Xprev final: " << Xprev[Xprev.size() - 1].transpose() << std::endl;
+    std::cout << "Uprev initial: " << Uprev[0].transpose() << std::endl;
+    std::cout << "Uprev final: " << Uprev[Uprev.size() - 1].transpose() << std::endl;
+
+    // Load model
+    fname = "saved_NN_models/trained_model_27_2025-01-03_00-19-49.pt";
+    std::cout << "Using " << fname << " model" << std::endl;
+    top.LoadModel(fname);
+
+    x0.setZero();
+    xg.setZero();
+    Xprev.clear();
+    Uprev.clear();
+    x0 << 10.28, -9.81, 4.30, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+    xg << 10.48, -9.81, 4.30, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+    std::cout << "x0: " << x0.transpose() << std::endl;
+    std::cout << "xg: " << xg.transpose() << std::endl;
+    std::tie(Xprev, Uprev) = top.WarmStartFromNN(x0, xg);
+    std::cout << "Warm start from neural network:" << std::endl;
+    std::cout << "Xprev initial: " << Xprev[0].transpose() << std::endl;
+    std::cout << "Xprev final: " << Xprev[Xprev.size() - 1].transpose() << std::endl;
+    std::cout << "Uprev initial: " << Uprev[0].transpose() << std::endl;
+    std::cout << "Uprev final: " << Uprev[Uprev.size() - 1].transpose() << std::endl;
+
+    // Load model
+    fname = "saved_NN_models/trained_model_27_2025-01-03_00-27-55.pt";
+    std::cout << "Using " << fname << " model" << std::endl;
+    top.LoadModel(fname);
+
+    x0.setZero();
+    xg.setZero();
+    Xprev.clear();
+    Uprev.clear();
+    x0 << 10.28, -9.81, 4.30, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+    xg << 10.48, -9.81, 4.30, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+    std::cout << "x0: " << x0.transpose() << std::endl;
+    std::cout << "xg: " << xg.transpose() << std::endl;
+    std::tie(Xprev, Uprev) = top.WarmStartFromNN(x0, xg);
+    std::cout << "Warm start from neural network:" << std::endl;
+    std::cout << "Xprev initial: " << Xprev[0].transpose() << std::endl;
+    std::cout << "Xprev final: " << Xprev[Xprev.size() - 1].transpose() << std::endl;
+    std::cout << "Uprev initial: " << Uprev[0].transpose() << std::endl;
+    std::cout << "Uprev final: " << Uprev[Uprev.size() - 1].transpose() << std::endl;
+
+    // Load model
+    fname = "saved_NN_models/trained_model_27_2025-01-03_00-34-39.pt";
     std::cout << "Using " << fname << " model" << std::endl;
     top.LoadModel(fname);
 
