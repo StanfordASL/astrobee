@@ -34,7 +34,7 @@
 namespace scp {
 
 TOP::TOP(decimal_t Tf_, int N_)
-  : N(N_), Tf(Tf_) {
+  : N(N_), Tf(Tf_), net(std::make_shared<Net>()), optimizer(net->parameters(), torch::optim::AdamOptions(0.001)) {
   state_dim = 13;
   state_dim_lin = 6;
   state_dim_nlin = 7;
@@ -50,7 +50,7 @@ TOP::TOP(decimal_t Tf_, int N_)
 
   // Network for warm start
   // Set weights to zero
-  net.initializeWeightsToZero();
+  // net.initializeWeightsToZero();
   // OR Load weights from file
   // net.loadWeights("path/to/net_weights.pt");
 
@@ -2507,7 +2507,8 @@ std::tuple<Vec6, Vec6> TOP::InferenceNN(Vec13 x0, Vec13 xg) {
   }
   std::cout << "Input tensor: " << input << std::endl;
   // Perform inference
-  torch::Tensor output = TOP::net.forward(input);
+  net->eval();
+  torch::Tensor output = net->forward(input);
   std::cout << "Output tensor: " << output << std::endl;
   // Extract U0 and Uf from output
   Vec6 U0, Uf;
@@ -2549,6 +2550,113 @@ std::tuple<Vec13Vec, Vec6Vec> TOP::WarmStartFromNN(Vec13 x0, Vec13 xg) {
     Xprev.push_back(X);
   }
   return std::make_tuple(Xprev, Uprev);
+}
+
+std::tuple<torch::Tensor, torch::Tensor> TOP::ReadData(const std::string& filename) {
+  std::ifstream file(filename);
+  if (!file.is_open()) {
+    throw std::runtime_error("Unable to open file: " + filename);
+  }
+
+  std::string line;
+  Vec13 x0, xg;
+  Vec13Vec Xprev;
+  Vec6Vec Uprev;
+  int N;
+
+  // Read x0
+  std::getline(file, line);
+  std::istringstream iss(line);
+  for (int i = 0; i < 13; ++i) {
+    iss >> x0[i];
+  }
+
+  // Read xg
+  std::getline(file, line);
+  iss.clear();
+  iss.str(line);
+  for (int i = 0; i < 13; ++i) {
+    iss >> xg[i];
+  }
+
+  // Read N
+  std::getline(file, line);
+  N = std::stoi(line);
+
+  // Read Xprev (N lines, each 13 values) and skip
+  for (int i = 0; i < N; ++i) {
+    std::getline(file, line);
+    std::istringstream iss(line);
+    Vec13 vec;
+    float value;
+    for (int j = 0; j < 13; ++j) {
+      iss >> vec[j];
+    }
+    Xprev.push_back(vec);
+  }
+
+  // Read Uprev (N-1 lines, each 6 values)
+  for (int i = 0; i < N - 1; ++i) {
+    std::getline(file, line);
+    std::istringstream iss(line);
+    Vec6 vec;
+    float value;
+    for (int j = 0; j < 6; ++j) {
+      iss >> vec[j];
+    }
+    Uprev.push_back(vec);
+  }
+
+  // Create input and output tensors
+  std::vector<float> input_vector(x0.data(), x0.data() + x0.size());
+  input_vector.insert(input_vector.end(), xg.data(), xg.data() + xg.size());
+
+  std::vector<float> output_vector(Uprev[0].data(), Uprev[0].data() + Uprev[0].size());
+  output_vector.insert(output_vector.end(), Uprev[N - 2].data(), Uprev[N - 2].data() + Uprev[N - 2].size());
+
+  torch::Tensor input_tensor = torch::from_blob(input_vector.data(), {1, 26}).clone();
+  torch::Tensor output_tensor = torch::from_blob(output_vector.data(), {1, 12}).clone();
+
+  return std::make_tuple(input_tensor, output_tensor);
+}
+
+void TOP::TrainModel(const std::vector<std::string>& files, int epochs) {
+  std::vector<torch::Tensor> inputs, outputs;
+
+  // Read all data files
+  for (const std::string& file : files) {
+    std::tuple<torch::Tensor, torch::Tensor> data = ReadData(file);
+    inputs.push_back(std::get<0>(data));
+    outputs.push_back(std::get<1>(data));
+  }
+
+  // Concatenate tensors for batch training
+  torch::Tensor input_tensor = torch::cat(inputs, 0);
+  torch::Tensor output_tensor = torch::cat(outputs, 0);
+
+  // Training loop
+  for (int epoch = 0; epoch < epochs; ++epoch) {
+    net->train();
+    optimizer.zero_grad();
+
+    torch::Tensor predictions = net->forward(input_tensor);
+    torch::Tensor loss = torch::mse_loss(predictions, output_tensor);
+
+    loss.backward();
+    optimizer.step();
+
+    std::cout << "Epoch [" << epoch + 1 << "/" << epochs << "], Loss: " << loss.item<float>() << std::endl;
+  }
+}
+
+void TOP::SaveModel(const std::string& model_path) {
+  torch::save(net, model_path);
+  std::cout << "Model saved to " << model_path << std::endl;
+}
+
+void TOP::LoadModel(const std::string& model_path) {
+  torch::load(net, model_path);
+  std::cout << "Model loaded from " << model_path << std::endl;
 }
 
 }  //  namespace scp
@@ -2798,7 +2906,8 @@ int main() {
 
   bool test_debug_obs_avoidance = false;
 
-  bool test_warm_start = true;
+  bool test_warm_start = false;
+  bool test_basic_saving = true;
 
   int num_problems = 0;
 
@@ -2926,6 +3035,39 @@ int main() {
     std::cout << "Xprev final: " << Xprev[Xprev.size() - 1].transpose() << std::endl;
     std::cout << "Uprev initial: " << Uprev[0].transpose() << std::endl;
     std::cout << "Uprev final: " << Uprev[Uprev.size() - 1].transpose() << std::endl;
+
+    // Save model
+    // top.SaveModel("init_model.pt");
+
+    // // Train the model
+    // std::vector<std::string> files = {"data1.txt", "data2.txt", "data3.txt"};
+    // top.TrainModel(files, 50);
+    // top.SaveModel("trained_model.pt");
+    // top.LoadModel("trained_model.pt");
+
+    // // Test inference
+    // x0.setZero();
+    // xg.setZero();
+    // x0 << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0, 0, 0, 1, 0, 0, 0;
+    // xg << 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0, 0, 0, 1, 0, 0, 0;
+    // std::cout << "x0: " << x0.transpose() << std::endl;
+    // std::cout << "xg: " << xg.transpose() << std::endl;
+    // Xprev.clear();
+    // Uprev.clear();
+    // std::tie(Xprev, Uprev) = top.WarmStartFromNN(x0, xg);
+    // std::cout << "Warm start from neural network:" << std::endl;
+    // std::cout << "Xprev initial: " << Xprev[0].transpose() << std::endl;
+    // std::cout << "Xprev final: " << Xprev[Xprev.size() - 1].transpose() << std::endl;
+    // std::cout << "Uprev initial: " << Uprev[0].transpose() << std::endl;
+    // std::cout << "Uprev final: " << Uprev[Uprev.size() - 1].transpose() << std::endl;
+  }
+
+  if (test_basic_saving) {
+    scp::TOP top(20., 801);
+
+    top.SaveModel("top_model2.pt");
+
+    top.LoadModel("top_model.pt");
   }
 
   return 0;

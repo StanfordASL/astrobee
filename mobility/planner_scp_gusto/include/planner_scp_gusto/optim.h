@@ -66,17 +66,17 @@ struct Net : torch::nn::Module {
   //   }
   // }
 
-  // Method to initialize all weights to zero
-  void initializeWeightsToZero() {
-    for (auto& param : this->parameters()) {
-        param.data().zero_();
-    }
-  }
+  // // Method to initialize all weights to zero
+  // void initializeWeightsToZero() {
+  //   for (auto& param : this->parameters()) {
+  //       param.data().zero_();
+  //   }
+  // }
 
   torch::Tensor forward(torch::Tensor x) {
-    x = torch::relu(fc1->forward(x.reshape({x.size(0), 26})));
+    x = torch::relu(fc1->forward(x));
     x = torch::relu(fc2->forward(x));
-    x = torch::log_softmax(fc3->forward(x), /*dim=*/1);
+    x = fc3->forward(x);
     return x;
   }
 
@@ -206,8 +206,6 @@ class TOP {
   decimal_t max_time_;        // Max Tf
   decimal_t control_rate_;        // Control frequency
 
-  Net net;  // Neural network for warm start
-
   TOP(decimal_t Tf, int N);
 
   ~TOP();
@@ -276,6 +274,22 @@ class TOP {
   void ValidationChecks();
   void NormalizeQuaternions();
   void WriteTrajectoryToFile(const Vec13Vec& states, const Vec6Vec& controls, const std::string& filename);
+
+  // Neural network for warm start
+  std::shared_ptr<Net> net;
+  torch::optim::Adam optimizer;
+
+  // Function to read a single dataset file
+  std::tuple<torch::Tensor, torch::Tensor> ReadData(const std::string& filename);
+
+  // Function to train the model
+  void TrainModel(const std::vector<std::string>& files, int epochs);
+
+  // Function to save the model to disk
+  void SaveModel(const std::string& model_path);
+
+  // Function to load the model from disk
+  void LoadModel(const std::string& model_path);
 
   Vec13 ForwardDynamics(Vec13 x, Vec6 u);
   std::tuple<Vec6, Vec6> InferenceNN(Vec13 x0, Vec13 xg);
