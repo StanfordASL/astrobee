@@ -25,6 +25,9 @@
 #include <string>
 #include <fstream>
 #include <tuple>
+#include <chrono>
+#include <ctime>
+#include <sstream>
 
 #ifdef PROFILING
 #undef PROFILING
@@ -2745,6 +2748,7 @@ std::vector<scp::Vec13> initializeMotionCases(bool is_granite, bool saveForNNTra
         xg << 10.28, -9.81, 4.30 + dz, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
         xgs.push_back(xg);
       }
+      return xgs;
     }
   }
 
@@ -2977,11 +2981,18 @@ void debugObsAvoidance() {
   }
 }
 
-void test_cpp_torch() {
-  std::cout << "Testing C++ with PyTorch" << std::endl;
-  torch::Tensor tensor = torch::rand({2, 3});
-  std::cout << tensor << std::endl;
-  return;
+std::string getCurrentTimestamp() {
+  // Get the current time as a time_point
+  auto now = std::chrono::system_clock::now();
+
+  // Convert it to a time_t to work with std::strftime
+  std::time_t now_time = std::chrono::system_clock::to_time_t(now);
+
+  // Convert to a string with a specific format (e.g., YYYY-MM-DD_HH-MM-SS)
+  std::stringstream ss;
+  ss << std::put_time(std::localtime(&now_time), "%Y-%m-%d_%H-%M-%S");
+
+  return ss.str();
 }
 
 int main() {
@@ -2994,10 +3005,9 @@ int main() {
 
   bool test_debug_obs_avoidance = false;
 
-  bool test_warm_start = false;
-  bool test_basic_saving = false;
-
   bool create_training_data = false;
+  bool train_and_save_model = false;
+  bool load_and_run_inference = true;
 
   int num_problems = 0;
 
@@ -3105,61 +3115,6 @@ int main() {
     debugObsAvoidance();
   }
 
-  if (test_warm_start) {
-    test_cpp_torch();
-    scp::TOP top(20., 801);
-    // Set ISS environment
-    top.is_granite = false;
-
-    scp::Vec13 x0;
-    scp::Vec13 xg;
-    x0 << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0, 0, 0, 1, 0, 0, 0;
-    xg << 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0, 0, 0, 1, 0, 0, 0;
-    std::cout << "x0: " << x0.transpose() << std::endl;
-    std::cout << "xg: " << xg.transpose() << std::endl;
-    scp::Vec13Vec Xprev;
-    scp::Vec6Vec Uprev;
-    std::tie(Xprev, Uprev) = top.WarmStartFromNN(x0, xg);
-    std::cout << "Warm start from neural network:" << std::endl;
-    std::cout << "Xprev initial: " << Xprev[0].transpose() << std::endl;
-    std::cout << "Xprev final: " << Xprev[Xprev.size() - 1].transpose() << std::endl;
-    std::cout << "Uprev initial: " << Uprev[0].transpose() << std::endl;
-    std::cout << "Uprev final: " << Uprev[Uprev.size() - 1].transpose() << std::endl;
-
-    // Save model
-    // top.SaveModel("init_model.pt");
-
-    // // Train the model
-    // std::vector<std::string> files = {"data1.txt", "data2.txt", "data3.txt"};
-    // top.TrainModel(files, 50);
-    // top.SaveModel("trained_model.pt");
-    // top.LoadModel("trained_model.pt");
-
-    // // Test inference
-    // x0.setZero();
-    // xg.setZero();
-    // x0 << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0, 0, 0, 1, 0, 0, 0;
-    // xg << 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0, 0, 0, 1, 0, 0, 0;
-    // std::cout << "x0: " << x0.transpose() << std::endl;
-    // std::cout << "xg: " << xg.transpose() << std::endl;
-    // Xprev.clear();
-    // Uprev.clear();
-    // std::tie(Xprev, Uprev) = top.WarmStartFromNN(x0, xg);
-    // std::cout << "Warm start from neural network:" << std::endl;
-    // std::cout << "Xprev initial: " << Xprev[0].transpose() << std::endl;
-    // std::cout << "Xprev final: " << Xprev[Xprev.size() - 1].transpose() << std::endl;
-    // std::cout << "Uprev initial: " << Uprev[0].transpose() << std::endl;
-    // std::cout << "Uprev final: " << Uprev[Uprev.size() - 1].transpose() << std::endl;
-  }
-
-  if (test_basic_saving) {
-    scp::TOP top(20., 801);
-
-    top.SaveModel("top_model2.pt");
-
-    top.LoadModel("top_model.pt");
-  }
-
   if (create_training_data) {
     bool saveForNNTraining = true;
     scp::TOP top(20., 801);
@@ -3174,6 +3129,64 @@ int main() {
       num_problems++;
       processProblemInstance(top, xgs[i], Eigen::AlignedBox3d(), num_problems, saveForNNTraining);
     }
+  }
+
+  if (train_and_save_model) {
+    scp::TOP top(20., 801);
+    top.is_granite = false;
+    // Get the first train_set_size files in output_trajs_for_NN
+    int train_set_size = 5;
+    std::vector<std::string> files;
+    for (int i = 1; i <= train_set_size; i++) {
+      files.push_back("output_trajs_for_NN/iss_optim_trajectory_" + std::to_string(i) + ".txt");
+    }
+    top.TrainModel(files, 50);
+
+    std::string timestamp = getCurrentTimestamp();
+    std::string filename = "trained_model_" + std::to_string(train_set_size) + "_" + timestamp + ".pt";
+    top.SaveModel(filename);
+  }
+
+  if (load_and_run_inference) {
+    scp::TOP top(20., 801);
+    top.is_granite = false;
+
+    // First try with init model
+    std::cout << "Using init model" << std::endl;
+    scp::Vec13 x0;
+    scp::Vec13 xg;
+    x0 << 10.28, -9.81, 4.30, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+    xg << 10.48, -9.81, 4.30, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+    std::cout << "x0: " << x0.transpose() << std::endl;
+    std::cout << "xg: " << xg.transpose() << std::endl;
+    scp::Vec13Vec Xprev;
+    scp::Vec6Vec Uprev;
+    std::tie(Xprev, Uprev) = top.WarmStartFromNN(x0, xg);
+    std::cout << "Warm start from neural network:" << std::endl;
+    std::cout << "Xprev initial: " << Xprev[0].transpose() << std::endl;
+    std::cout << "Xprev final: " << Xprev[Xprev.size() - 1].transpose() << std::endl;
+    std::cout << "Uprev initial: " << Uprev[0].transpose() << std::endl;
+    std::cout << "Uprev final: " << Uprev[Uprev.size() - 1].transpose() << std::endl;
+
+    // Load model
+    std::string fname = "trained_model_5_2025-01-03_00-03-15.pt";
+    std::cout << "Using " << fname << " model" << std::endl;
+    top.LoadModel(fname);
+
+    x0.setZero();
+    xg.setZero();
+    Xprev.clear();
+    Uprev.clear();
+    x0 << 10.28, -9.81, 4.30, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+    xg << 10.48, -9.81, 4.30, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+    std::cout << "x0: " << x0.transpose() << std::endl;
+    std::cout << "xg: " << xg.transpose() << std::endl;
+    std::tie(Xprev, Uprev) = top.WarmStartFromNN(x0, xg);
+    std::cout << "Warm start from neural network:" << std::endl;
+    std::cout << "Xprev initial: " << Xprev[0].transpose() << std::endl;
+    std::cout << "Xprev final: " << Xprev[Xprev.size() - 1].transpose() << std::endl;
+    std::cout << "Uprev initial: " << Uprev[0].transpose() << std::endl;
+    std::cout << "Uprev final: " << Uprev[Uprev.size() - 1].transpose() << std::endl;
   }
 
   return 0;
