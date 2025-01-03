@@ -2469,6 +2469,54 @@ void TOP::WriteTrajectoryToFile(const Vec13Vec& states, const Vec6Vec& controls,
   traj_file.close();
 }
 
+void TOP::WriteTrajectoryToFileForNN(const Vec13& x0, const Vec13& xg, int N, const Vec13Vec& Xsoln,
+                                     const Vec6Vec& Usoln,
+                                     const std::string& fname) {
+  // Open a file stream to write the data
+  std::ofstream file(fname);
+
+  if (!file.is_open()) {
+    std::cerr << "Error: Unable to open file " << fname << " for writing." << std::endl;
+    throw std::runtime_error("Error: Unable to open file " + fname + " for writing.");
+    return;
+  }
+
+  // Write the initial state (x0) and goal state (xg), each of length 13
+  for (int i = 0; i < 13; ++i) {
+    file << x0[i] << " ";
+  }
+  file << std::endl;
+
+  for (int i = 0; i < 13; ++i) {
+    file << xg[i] << " ";
+  }
+  file << std::endl;
+
+  // Write the number of time steps (N)
+  file << N << std::endl;
+
+  // Write the Xprev data (N lines of length 13)
+  for (int i = 0; i < N; ++i) {
+    for (int j = 0; j < 13; ++j) {
+      file << Xsoln[i][j] << " ";
+    }
+    file << std::endl;
+  }
+
+  // Write the Uprev data (N-1 lines of length 6)
+  for (int i = 0; i < N - 1; ++i) {
+    for (int j = 0; j < 6; ++j) {
+      file << Usoln[i][j] << " ";
+    }
+    file << std::endl;
+  }
+
+  // Close the file stream
+  file.close();
+
+  std::cout << "Trajectory data for training written to '" << fname << "'" << std::endl;
+}
+
 Vec13 TOP::ForwardDynamics(Vec13 x, Vec6 u) {
   Vec13 xp = Vec13::Zero();
   // Extract position, velocity, and quaternion from x
@@ -2670,10 +2718,35 @@ void clearToZeros(std::vector<VecType, Eigen::aligned_allocator<VecType>>& vec) 
 }
 
 // Function to initialize motion cases
-std::vector<scp::Vec13> initializeMotionCases(bool is_granite) {
+std::vector<scp::Vec13> initializeMotionCases(bool is_granite, bool saveForNNTraining = false) {
   std::vector<scp::Vec13> xgs;
 
   scp::Vec13 xg;
+
+  if (saveForNNTraining) {
+    if (is_granite) {
+      throw std::runtime_error("Granite case not supported for NN training.");
+      return xgs;
+    } else {
+      // Simple cases for ISS
+      // x0 is 10.28, -9.81, 4.30, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+      // Cases with various motion in Y
+      for (float dy = 0.1; dy <= 1.0; dy += 0.1) {
+        xg << 10.28, -9.81 + dy, 4.30, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+        xgs.push_back(xg);
+      }
+      // Cases with various motion in X
+      for (float dx = 0.1; dx <= 1.0; dx += 0.1) {
+        xg << 10.28 + dx, -9.81, 4.30, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+        xgs.push_back(xg);
+      }
+      // Cases with various motion in Z
+      for (float dz = 0.1; dz <= 1.0; dz += 0.1) {
+        xg << 10.28, -9.81, 4.30 + dz, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+        xgs.push_back(xg);
+      }
+    }
+  }
 
   if (is_granite) {
     // Case 2: Motion in Y
@@ -2751,7 +2824,8 @@ std::vector<scp::Vec13> initializeMotionCases(bool is_granite) {
 }
 
 // Function to process a single problem instance
-void processProblemInstance(scp::TOP &top_eg, const scp::Vec13 &xg, const Eigen::AlignedBox3d &vbox, int problemIndex) {
+void processProblemInstance(scp::TOP& top_eg, const scp::Vec13& xg, const Eigen::AlignedBox3d& vbox, int problemIndex,
+                            bool saveForNNTraining = false) {
   if (top_eg.is_granite) {
     top_eg.x0 << -0.4, 0.4, -0.67, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
   } else {
@@ -2775,17 +2849,26 @@ void processProblemInstance(scp::TOP &top_eg, const scp::Vec13 &xg, const Eigen:
     std::cout << "After adding 1, Number of obstacles: " << top_eg.keep_out_zones_.size() << std::endl;
   }
 
-  std::string fname = "output_trajs/" + std::string((top_eg.is_granite) ? "granite" : "iss") + "_optim_trajectory_" +
-                        std::to_string(problemIndex) + ".txt";
+  std::string fname = "output_trajs" + std::string((saveForNNTraining) ? "_for_NN" : "") + "/" +
+                      std::string((top_eg.is_granite) ? "granite" : "iss") + "_optim_trajectory_" +
+                      std::to_string(problemIndex) + ".txt";
 
   if (!top_eg.Solve()) {
-    scp::Vec13Vec empty_Xprev;
-    scp::Vec6Vec empty_Uprev;
-    top_eg.WriteTrajectoryToFile(empty_Xprev, empty_Uprev, fname);
-    std::cout << "Failure: Problem " << problemIndex << " could not be solved!" << std::endl;
-    std::cout << "--------------------------------------------" << std::endl;
-    return;
+    if (saveForNNTraining) {
+      std::cout << "Failure: Problem " << problemIndex << " could not be solved!" << std::endl;
+      return;
+    } else {
+      scp::Vec13Vec empty_Xprev;
+      scp::Vec6Vec empty_Uprev;
+      top_eg.WriteTrajectoryToFile(empty_Xprev, empty_Uprev, fname);
+      std::cout << "Failure: Problem " << problemIndex << " could not be solved!" << std::endl;
+      std::cout << "Empty trajectory written to file: " << fname << std::endl;
+      std::cout << "--------------------------------------------" << std::endl;
+      return;
+    }
   }
+
+  std::cout << "Success: Problem " << problemIndex << " solved!" << std::endl;
 
   Eigen::VectorXd solution = top_eg.solver->getSolution();
   for (size_t ii = 0; ii < top_eg.N; ii++) {
@@ -2795,10 +2878,15 @@ void processProblemInstance(scp::TOP &top_eg, const scp::Vec13 &xg, const Eigen:
       top_eg.Uprev[ii] = solution.segment(top_eg.state_dim * top_eg.N + top_eg.control_dim * ii, top_eg.control_dim);
   }
 
-  top_eg.WriteTrajectoryToFile(top_eg.Xprev, top_eg.Uprev, fname);
+  if (saveForNNTraining) {
+    top_eg.WriteTrajectoryToFileForNN(top_eg.x0, top_eg.xg, top_eg.N, top_eg.Xprev, top_eg.Uprev, fname);
+  } else {
+    top_eg.WriteTrajectoryToFile(top_eg.Xprev, top_eg.Uprev, fname);
+  }
+
   std::cout << "Trajectory written to file: " << fname << std::endl;
-  std::cout << "Success: Problem " << problemIndex << " solved!" << std::endl;
   std::cout << "--------------------------------------------" << std::endl;
+  return;
 }
 
 void debugObsAvoidance() {
@@ -2907,7 +2995,9 @@ int main() {
   bool test_debug_obs_avoidance = false;
 
   bool test_warm_start = false;
-  bool test_basic_saving = true;
+  bool test_basic_saving = false;
+
+  bool create_training_data = false;
 
   int num_problems = 0;
 
@@ -3068,6 +3158,22 @@ int main() {
     top.SaveModel("top_model2.pt");
 
     top.LoadModel("top_model.pt");
+  }
+
+  if (create_training_data) {
+    bool saveForNNTraining = true;
+    scp::TOP top(20., 801);
+    top.is_granite = false;
+    top.enforce_obs_avoidance_const = false;
+
+    // Initialize motion cases
+    std::vector<scp::Vec13> xgs = initializeMotionCases(top.is_granite, saveForNNTraining);
+
+    // Process problems
+    for (size_t i = 0; i < xgs.size(); ++i) {
+      num_problems++;
+      processProblemInstance(top, xgs[i], Eigen::AlignedBox3d(), num_problems, saveForNNTraining);
+    }
   }
 
   return 0;

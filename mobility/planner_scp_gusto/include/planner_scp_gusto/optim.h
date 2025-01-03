@@ -274,6 +274,8 @@ class TOP {
   void ValidationChecks();
   void NormalizeQuaternions();
   void WriteTrajectoryToFile(const Vec13Vec& states, const Vec6Vec& controls, const std::string& filename);
+  void WriteTrajectoryToFileForNN(const Vec13& x0, const Vec13& xg, int N, const Vec13Vec& Xsoln, const Vec6Vec& Usoln,
+                                  const std::string& fname);
 
   // Neural network for warm start
   std::shared_ptr<Net> net;
