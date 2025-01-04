@@ -415,6 +415,7 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
       top->x_max(7) = 0.05;
     }
     top->use_nn_warm_start = cfg_.Get<bool>("use_nn_warm_start");
+    top->nn_model_path = cfg_.Get<std::string>("nn_model_path");
 
     if (keep_in_zones_.size() == 0) {
       ROS_ERROR("Zero keepin zones!! Plan failed");

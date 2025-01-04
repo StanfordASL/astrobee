@@ -53,7 +53,7 @@ TOP::TOP(decimal_t Tf_, int N_)
 
   // Network for warm start
   use_nn_warm_start = false;
-  nn_model_path = "saved_NN_models/trained_model_27_2025-01-03_00-34-39.pt";
+  nn_model_path = "";
   // Set weights to zero
   // net.initializeWeightsToZero();
   // OR Load weights from file
@@ -2755,6 +2755,15 @@ void TOP::SaveModel(const std::string& model_path) {
 }
 
 void TOP::LoadModel(const std::string& model_path) {
+  std::cout << "Attempting to load model from " << model_path << std::endl;
+  std::cout << "In LoadModel, attempting to load in NN model from " << model_path << std::endl;
+  char full_path[PATH_MAX];
+  if (realpath(model_path.c_str(), full_path)) {
+    std::cout << "Resolved path: " << full_path << std::endl;
+  } else {
+    std::cerr << "Error resolving path: " << strerror(errno) << std::endl;
+    throw std::runtime_error("Error resolving path: " + std::string(strerror(errno)));
+  }
   torch::load(net, model_path);
   std::cout << "Model loaded from " << model_path << std::endl;
 }
@@ -3057,7 +3066,7 @@ int main() {
   bool create_training_data = false;
   bool train_and_save_model = false;
   bool load_and_run_inference = false;
-  bool test_warm_start = true;
+  bool test_warm_start = false;
 
   int num_problems = 0;
 
@@ -3332,6 +3341,12 @@ int main() {
     }
     std::cout << "--------------------------------------------" << std::endl;
   }
+
+  scp::TOP* top;
+  top = new scp::TOP(20., 801);
+  top->nn_model_path = "/home/enceladus/astrobee/src/saved_NN_models/trained_model_27_2025-01-03_00-34-39.pt";
+  top->use_nn_warm_start = true;
+  top->Solve();
 
   return 0;
 }
