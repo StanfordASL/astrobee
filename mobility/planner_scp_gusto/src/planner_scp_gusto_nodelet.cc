@@ -71,6 +71,7 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
   double epsilon_;
   bool enforce_obs_avoidance_const_;
   bool is_granite_;
+  bool use_nn_warm_start;
   bool use_2d;            // true for granite table
   std::string flight_mode_;
   ros::NodeHandle *nh_;
@@ -97,6 +98,7 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
     epsilon_ = cfg_.Get<double>("epsilon");
     enforce_obs_avoidance_const_ = cfg_.Get<bool>("enforce_obs_avoidance_const");
     is_granite_ = cfg_.Get<bool>("is_granite");
+    use_nn_warm_start = cfg_.Get<bool>("use_nn_warm_start");
       // Notify initialization complete
     NODELET_DEBUG_STREAM("Initialization complete");
     // Success
@@ -115,6 +117,7 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
     enforce_obs_avoidance_const_ = cfg_.Get<bool>("enforce_obs_avoidance_const");
     std::cout << "set enforce_obs_avoidance_const_ to " << enforce_obs_avoidance_const_ << std::endl;
     is_granite_ = cfg_.Get<bool>("is_granite");
+    use_nn_warm_start = cfg_.Get<bool>("use_nn_warm_start");
     return true;
   }
 
@@ -411,6 +414,7 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
       top->x_min(7) = -0.05;  // qy
       top->x_max(7) = 0.05;
     }
+    top->use_nn_warm_start = cfg_.Get<bool>("use_nn_warm_start");
 
     if (keep_in_zones_.size() == 0) {
       ROS_ERROR("Zero keepin zones!! Plan failed");

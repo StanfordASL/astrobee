@@ -45,6 +45,9 @@ struct Net : torch::nn::Module {
     fc2 = register_module("fc2", torch::nn::Linear(128, 64));
     fc3 = register_module("fc3", torch::nn::Linear(64, 12));
   }
+  ~Net() {
+    std::cout << "Destructor called for Net object." << std::endl;
+  }
 
   // // Load weights from a file
   // void loadWeights(const std::string& filename) {
@@ -278,8 +281,11 @@ class TOP {
                                   const std::string& fname);
 
   // Neural network for warm start
+  bool use_nn_warm_start;
+  std::string nn_model_path;
   std::shared_ptr<Net> net;
   torch::optim::Adam optimizer;
+  void InitTrajWarmStart();
 
   // Function to read a single dataset file
   std::tuple<torch::Tensor, torch::Tensor> ReadData(const std::string& filename);
