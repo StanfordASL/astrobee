@@ -71,7 +71,8 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
   double epsilon_;
   bool enforce_obs_avoidance_const_;
   bool is_granite_;
-  bool use_nn_warm_start;
+  bool use_nn_warm_start_;
+  std::string nn_model_path_;
   bool use_2d;            // true for granite table
   std::string flight_mode_;
   ros::NodeHandle *nh_;
@@ -98,7 +99,8 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
     epsilon_ = cfg_.Get<double>("epsilon");
     enforce_obs_avoidance_const_ = cfg_.Get<bool>("enforce_obs_avoidance_const");
     is_granite_ = cfg_.Get<bool>("is_granite");
-    use_nn_warm_start = cfg_.Get<bool>("use_nn_warm_start");
+    use_nn_warm_start_ = cfg_.Get<bool>("use_nn_warm_start");
+    nn_model_path_ = cfg_.Get<std::string>("nn_model_path");
       // Notify initialization complete
     NODELET_DEBUG_STREAM("Initialization complete");
     // Success
@@ -110,14 +112,13 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
   }
 
   bool ReconfigureCallback(dynamic_reconfigure::Config &config) {
-    std::cout << "ReconfigureCallback" << std::endl;
     if (!cfg_.Reconfigure(config))
       return false;
     epsilon_ = cfg_.Get<double>("epsilon");
     enforce_obs_avoidance_const_ = cfg_.Get<bool>("enforce_obs_avoidance_const");
-    std::cout << "set enforce_obs_avoidance_const_ to " << enforce_obs_avoidance_const_ << std::endl;
     is_granite_ = cfg_.Get<bool>("is_granite");
-    use_nn_warm_start = cfg_.Get<bool>("use_nn_warm_start");
+    use_nn_warm_start_ = cfg_.Get<bool>("use_nn_warm_start");
+    nn_model_path_ = cfg_.Get<std::string>("nn_model_path");
     return true;
   }
 
@@ -206,6 +207,24 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
     top->Jinv = top->J.inverse();
     top->keep_in_zones_ = keep_in_zones_;
     top->keep_out_zones_ = keep_out_zones_;
+
+    top->enforce_obs_avoidance_const = enforce_obs_avoidance_const_;
+    top->is_granite = is_granite_;
+    if (top->is_granite) {
+      top->x_min(2) = -0.675;  // z coordinate
+      top->x_max(2) = -0.67;
+      top->x_min(6) = -0.05;  // qx
+      top->x_max(6) = 0.05;
+      top->x_min(7) = -0.05;  // qy
+      top->x_max(7) = 0.05;
+    }
+    top->use_nn_warm_start = use_nn_warm_start_;
+    top->nn_model_path = nn_model_path_;
+    std::cout << "PlannerSCPGusto: Called TOP with settings: " << std::endl;
+    std::cout << "enforce_obs_avoidance_const: " << top->enforce_obs_avoidance_const << std::endl;
+    std::cout << "is_granite: " << top->is_granite << std::endl;
+    std::cout << "use_nn_warm_start: " << top->use_nn_warm_start << std::endl;
+    std::cout << "nn_model_path: " << top->nn_model_path << std::endl;
 
     /*
     if (candidate_Tf > top->Tf) {
@@ -391,31 +410,6 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
       top->x_min(ii) = min(ii);
       top->x_max(ii) = max(ii);
     }
-
-    // if (!ReconfigureCallback(cfg_)) {
-    //   std::cout << "Failed to reconfigure" << std::endl;
-    //   return false;
-    // }
-    // std::cout << "Reconfigured" << std::endl;
-    std::cout << "Now the value of enforce_obs_avoidance_const_ is " << enforce_obs_avoidance_const_ << std::endl;
-    if (!cfg_.Get<bool>("enforce_obs_avoidance_const", enforce_obs_avoidance_const_)) {
-      std::cout << "Failed to get param enforce_obs_avoidance_const_" << std::endl;
-      enforce_obs_avoidance_const_ = true;
-    }
-    std::cout << "Now the value of enforce_obs_avoidance_const_ is " << enforce_obs_avoidance_const_ << std::endl;
-    top->is_granite = cfg_.Get<bool>("is_granite");
-    top->enforce_obs_avoidance_const = enforce_obs_avoidance_const_;
-    std::cout << "calling TOP with enforce_obs_avoidance_const: " << top->enforce_obs_avoidance_const << std::endl;
-    if (top->is_granite) {
-      top->x_min(2) = -0.675;  // z coordinate
-      top->x_max(2) = -0.67;
-      top->x_min(6) = -0.05;  // qx
-      top->x_max(6) = 0.05;
-      top->x_min(7) = -0.05;  // qy
-      top->x_max(7) = 0.05;
-    }
-    top->use_nn_warm_start = cfg_.Get<bool>("use_nn_warm_start");
-    top->nn_model_path = cfg_.Get<std::string>("nn_model_path");
 
     if (keep_in_zones_.size() == 0) {
       ROS_ERROR("Zero keepin zones!! Plan failed");
