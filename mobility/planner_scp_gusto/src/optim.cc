@@ -2779,38 +2779,75 @@ void clearToZeros(std::vector<VecType, Eigen::aligned_allocator<VecType>>& vec) 
 }
 
 // Function to initialize motion cases
-std::vector<scp::Vec13> initializeMotionCases(bool is_granite, bool saveForNNTraining = false) {
-  std::vector<scp::Vec13> xgs;
+std::tuple<scp::Vec13Vec, scp::Vec13Vec> initializeMotionCases(bool is_granite, bool saveForNNTraining = false) {
+  scp::Vec13Vec x0s;
+  scp::Vec13Vec xgs;
 
+  scp::Vec13 x0;
   scp::Vec13 xg;
+
+  bool single_x0 = false;  // true --> single x0, multiple xg. false --> multiple x0, multiple xg.
 
   if (saveForNNTraining) {
     if (is_granite) {
       throw std::runtime_error("Granite case not supported for NN training.");
-      return xgs;
+      return std::make_tuple(x0s, xgs);
     } else {
-      // Simple cases for ISS
-      // x0 is 10.28, -9.81, 4.30, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
-      // Cases with various motion in Y
-      for (float dy = 0.1; dy <= 1.0; dy += 0.1) {
-        xg << 10.28, -9.81 + dy, 4.30, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
-        xgs.push_back(xg);
+      if (single_x0) {
+        // Simple cases for ISS
+        // x0 is 10.28, -9.81, 4.30, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+        x0 << 10.28, -9.81, 4.30, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+        // Cases with various motion in Y
+        for (float dy = 0.1; dy <= 1.0; dy += 0.1) {
+          xg << 10.28, -9.81 + dy, 4.30, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+          xgs.push_back(xg);
+        }
+        // Cases with various motion in X
+        for (float dx = 0.1; dx <= 1.0; dx += 0.1) {
+          xg << 10.28 + dx, -9.81, 4.30, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+          xgs.push_back(xg);
+        }
+        // Cases with various motion in Z
+        for (float dz = 0.1; dz <= 1.0; dz += 0.1) {
+          xg << 10.28, -9.81, 4.30 + dz, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+          xgs.push_back(xg);
+        }
+        for (size_t i = 0; i < xgs.size(); ++i) {
+          x0s.push_back(x0);
+        }
+        return std::make_tuple(x0s, xgs);
+      } else {
+        scp::Vec3 pos_min_(10.28, -9.81, 4.30);
+        scp::Vec3 pos_max_(11.28, -8.81, 5.30);
+        scp::decimal_t spacing = 0.2;
+        // For any point in this grid (0.1m spacing), generate a trajectory to the goal
+        for (float x = pos_min_(0); x <= pos_max_(0); x += spacing) {
+          for (float y = pos_min_(1); y <= pos_max_(1); y += spacing) {
+            for (float z = pos_min_(2); z <= pos_max_(2); z += spacing) {
+              x0 << x, y, z, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+              for (float a = pos_min_(0); a <= pos_max_(0); a += spacing) {
+                for (float b = pos_min_(1); b <= pos_max_(1); b += spacing) {
+                  for (float c = pos_min_(2); c <= pos_max_(2); c += spacing) {
+                    xg << a, b, c, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+                    if (x0 != xg) {
+                      x0s.push_back(x0);
+                      xgs.push_back(xg);
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+        return std::make_tuple(x0s, xgs);
       }
-      // Cases with various motion in X
-      for (float dx = 0.1; dx <= 1.0; dx += 0.1) {
-        xg << 10.28 + dx, -9.81, 4.30, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
-        xgs.push_back(xg);
-      }
-      // Cases with various motion in Z
-      for (float dz = 0.1; dz <= 1.0; dz += 0.1) {
-        xg << 10.28, -9.81, 4.30 + dz, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
-        xgs.push_back(xg);
-      }
-      return xgs;
     }
   }
 
   if (is_granite) {
+    // All x0s are the same
+    x0 << -0.4, 0.4, -0.67, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+
     // Case 2: Motion in Y
     xg << -0.4, -0.4, -0.67, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
     xgs.push_back(xg);
@@ -2857,7 +2894,14 @@ std::vector<scp::Vec13> initializeMotionCases(bool is_granite, bool saveForNNTra
     // Case 11: Rotation + translation asymmetric motion in XY
     xg << 0.5, -0.3, -0.67, 0, 0, 0, 0, 0, 0.7068252, 0.7073883, 0, 0, 0;
     xgs.push_back(xg);
+
+    for (size_t i = 0; i < xgs.size(); ++i) {
+      x0s.push_back(x0);
+    }
   } else {
+    // All x0s are the same
+    x0 << 10.28, -9.81, 4.30, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+
     // Case 1: Motion in Y
     xg << 10.28, -8.81, 4.30, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
     xgs.push_back(xg);
@@ -2880,19 +2924,19 @@ std::vector<scp::Vec13> initializeMotionCases(bool is_granite, bool saveForNNTra
     // Case 7: Motion in YZ
     xg << 10.28, -8.81, 5.30, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
     xgs.push_back(xg);
+
+    for (size_t i = 0; i < xgs.size(); ++i) {
+      x0s.push_back(x0);
+    }
   }
 
-  return xgs;
+  return std::make_tuple(x0s, xgs);
 }
 
 // Function to process a single problem instance
-void processProblemInstance(scp::TOP& top_eg, const scp::Vec13& xg, const Eigen::AlignedBox3d& vbox, int problemIndex,
-                            bool saveForNNTraining = false) {
-  if (top_eg.is_granite) {
-    top_eg.x0 << -0.4, 0.4, -0.67, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
-  } else {
-    top_eg.x0 << 10.28, -9.81, 4.30, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
-  }
+void processProblemInstance(scp::TOP& top_eg, const scp::Vec13& x0, const scp::Vec13& xg,
+                            const Eigen::AlignedBox3d& vbox, int problemIndex, bool saveForNNTraining = false) {
+  top_eg.x0 = x0;
   top_eg.xg = xg;
   clearToZeros(top_eg.Xprev);
   clearToZeros(top_eg.Uprev);
@@ -3063,7 +3107,7 @@ int main() {
 
   bool test_debug_obs_avoidance = false;
 
-  bool create_training_data = false;
+  bool create_training_data = true;
   bool train_and_save_model = false;
   bool load_and_run_inference = false;
   bool test_warm_start = false;
@@ -3083,13 +3127,14 @@ int main() {
     }
 
     // Initialize motion cases
-    std::vector<scp::Vec13> xgs = initializeMotionCases(top_eg.is_granite);
+    scp::Vec13Vec x0s, xgs;
+    std::tie(x0s, xgs) = initializeMotionCases(top_eg.is_granite);
 
     if (test_granite_no_obs) {
       // Process problems without obstacles
       for (size_t i = 0; i < xgs.size(); ++i) {
         num_problems++;
-        processProblemInstance(top_eg, xgs[i], Eigen::AlignedBox3d(), num_problems);
+        processProblemInstance(top_eg, x0s[i], xgs[i], Eigen::AlignedBox3d(), num_problems);
       }
     }
 
@@ -3100,7 +3145,7 @@ int main() {
       largeObstacle.extend(Eigen::Vector3d(0., -0.4, 0));
       for (size_t i = 0; i < xgs.size(); ++i) {
         num_problems++;
-        processProblemInstance(top_eg, xgs[i], largeObstacle, num_problems);
+        processProblemInstance(top_eg, x0s[i], xgs[i], largeObstacle, num_problems);
       }
     }
 
@@ -3111,7 +3156,7 @@ int main() {
       smallObstacle.extend(Eigen::Vector3d(0., -0.25, 0));
       for (size_t i = 0; i < xgs.size(); ++i) {
         num_problems++;
-        processProblemInstance(top_eg, xgs[i], smallObstacle, num_problems);
+        processProblemInstance(top_eg, x0s[i], xgs[i], smallObstacle, num_problems);
       }
     }
   }
@@ -3133,13 +3178,14 @@ int main() {
     // top_eg.x_max(2) = 100.0;
 
     // Initialize motion cases
-    std::vector<scp::Vec13> xgs = initializeMotionCases(top_eg.is_granite);
+    scp::Vec13Vec x0s, xgs;
+    std::tie(x0s, xgs) = initializeMotionCases(top_eg.is_granite);
 
     if (test_iss_no_obs) {
       // Process problems without obstacles
       for (size_t i = 0; i < xgs.size(); ++i) {
         num_problems++;
-        processProblemInstance(top_eg, xgs[i], Eigen::AlignedBox3d(), num_problems);
+        processProblemInstance(top_eg, x0s[i], xgs[i], Eigen::AlignedBox3d(), num_problems);
       }
     }
     if (test_iss_small_obs) {
@@ -3154,7 +3200,7 @@ int main() {
       top_eg.enforce_obs_avoidance_const = true;
       for (size_t i = 0; i < xgs.size(); ++i) {
         num_problems++;
-        processProblemInstance(top_eg, xgs[i], smallObstacle, num_problems);
+        processProblemInstance(top_eg, x0s[i], xgs[i], smallObstacle, num_problems);
       }
     }
     if (test_iss_large_obs) {
@@ -3165,7 +3211,7 @@ int main() {
       top_eg.enforce_obs_avoidance_const = true;
       for (size_t i = 0; i < xgs.size(); ++i) {
         num_problems++;
-        processProblemInstance(top_eg, xgs[i], obstacle, num_problems);
+        processProblemInstance(top_eg, x0s[i], xgs[i], obstacle, num_problems);
       }
     }
   }
@@ -3181,12 +3227,13 @@ int main() {
     top.enforce_obs_avoidance_const = false;
 
     // Initialize motion cases
-    std::vector<scp::Vec13> xgs = initializeMotionCases(top.is_granite, saveForNNTraining);
+    scp::Vec13Vec x0s, xgs;
+    std::tie(x0s, xgs) = initializeMotionCases(top.is_granite, saveForNNTraining);
 
     // Process problems
     for (size_t i = 0; i < xgs.size(); ++i) {
       num_problems++;
-      processProblemInstance(top, xgs[i], Eigen::AlignedBox3d(), num_problems, saveForNNTraining);
+      processProblemInstance(top, x0s[i], xgs[i], Eigen::AlignedBox3d(), num_problems, saveForNNTraining);
     }
   }
 
