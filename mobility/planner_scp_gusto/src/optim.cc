@@ -3107,7 +3107,7 @@ int main() {
 
   bool test_debug_obs_avoidance = false;
 
-  bool create_training_data = true;
+  bool create_training_data = false;
   bool train_and_save_model = false;
   bool load_and_run_inference = false;
   bool test_warm_start = false;
