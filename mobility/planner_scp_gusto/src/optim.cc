@@ -52,8 +52,8 @@ TOP::TOP(decimal_t Tf_, int N_)
   dh = Tf / N;
 
   // Network for warm start
-  use_nn_warm_start = false;
-  nn_model_path = "";
+  use_nn_warm_start = true;
+  nn_model_path = "/home/enceladus/astrobee/src/saved_NN_models/trained_model_27_2025-01-03_00-34-39.pt";
   // Set weights to zero
   // net.initializeWeightsToZero();
   // OR Load weights from file
