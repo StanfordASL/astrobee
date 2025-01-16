@@ -18,6 +18,8 @@
 
 #include "planner_scp_gusto/optim.h"
 
+#include <sys/stat.h>
+
 #include <algorithm>
 #include <iostream>
 #include <vector>
@@ -28,6 +30,7 @@
 #include <chrono>
 #include <ctime>
 #include <sstream>
+
 
 #ifdef PROFILING
 #undef PROFILING
@@ -52,12 +55,15 @@ TOP::TOP(decimal_t Tf_, int N_)
   dh = Tf / N;
 
   // Network for warm start
-  use_nn_warm_start = true;
-  nn_model_path = "/home/enceladus/astrobee/src/saved_NN_models/trained_model_27_2025-01-03_00-34-39.pt";
+  use_nn_warm_start = false;
+  nn_model_path = "";
   // Set weights to zero
   // net.initializeWeightsToZero();
   // OR Load weights from file
   // net.loadWeights("path/to/net_weights.pt");
+
+  // Folder to save outputs
+  output_dir = "planner_scp_gusto_outputs";
 
   // TODO(somrita): Implement all of these
   is_granite = false;
@@ -288,7 +294,7 @@ void TOP::UpdateProblemDimension(size_t N_) {
     std::cout << "TOP::UpdateProblemDimension: Using NN warm start" << std::endl;
     InitTrajWarmStart();
   } else {
-    std::cout << "TOP::UpdateProblemDimension: Using straight line warm start" << std::endl;
+    std::cout << "TOP::UpdateProblemDimension: Using straight line cold start" << std::endl;
     InitTrajStraightline();
   }
 
@@ -383,8 +389,9 @@ void TOP::InitTrajStraightline() {
       Uprev[ii](jj) = 0;
     }
   }
-  std::string fname =
-    "output_trajs/" + std::string(is_granite ? "granite" : "iss") + "_initial_straight_line_trajectory.txt";
+  std::string timestamp = getCurrentTimestamp();
+  std::string fname = output_dir + "/" + std::string(is_granite ? "granite" : "iss") +
+                      "_initial_straight_line_trajectory" + "_" + timestamp + ".txt";
   WriteTrajectoryToFile(Xprev, Uprev, fname);
 }
 
@@ -429,9 +436,9 @@ void TOP::InitTrajWarmStart() {
     }
     Xprev = X_inter;
   }
-
-  std::string fname =
-    "output_trajs/" + std::string(is_granite ? "granite" : "iss") + "_initial_nn_warm_start_trajectory.txt";
+  std::string timestamp = getCurrentTimestamp();
+  std::string fname = output_dir + "/" + std::string(is_granite ? "granite" : "iss") +
+                      "_initial_nn_warm_start_trajectory" + "_" + timestamp + ".txt";
   WriteTrajectoryToFile(Xprev, Uprev, fname);
   return;
 }
@@ -1170,13 +1177,24 @@ void TOP::SetSimpleConstraints() {
 }
 
 void TOP::PrettyPrintConstraints() {
-  std::string fname = "pretty_constraints.txt";
+  std::string timestamp = getCurrentTimestamp();
+  std::string fname = output_dir + "/pretty_constraints" + "_" + timestamp + ".txt";
+  CreateDirectoryIfNotExists(output_dir);
   std::ofstream outFile(fname);
   if (!outFile.is_open()) {
-      std::cerr << "Error opening file for writing!" << std::endl;
+      std::cerr << "Error opening file " << fname << " for writing!" << std::endl;
       return;
   }
   std::cout << "Printing constraints to file " << fname << std::endl;
+
+  char full_path[PATH_MAX];
+  if (realpath(fname.c_str(), full_path)) {
+    std::cout << "Full path: " << full_path << std::endl;
+  } else {
+    std::cerr << "Error resolving path: " << full_path << " " << strerror(errno) << std::endl;
+    throw std::runtime_error("Error resolving path: " + std::string(strerror(errno)));
+  }
+
 
   size_t num_vars = GetNumTOPVariables();
   size_t num_cons = GetNumTOPConstraints();
@@ -1211,6 +1229,23 @@ void TOP::PrettyPrintConstraints() {
   }
 
   outFile.close();
+  return;
+}
+
+void TOP::CreateDirectoryIfNotExists(const std::string& path) {
+  struct stat info;
+  if (stat(path.c_str(), &info) != 0) {
+      // Directory does not exist, attempt to create it
+      if (mkdir(path.c_str(), 0755) == 0) {
+          std::cout << "Directory created successfully: " << path << std::endl;
+      } else {
+          std::perror("Failed to create directory");
+      }
+  } else if (info.st_mode & S_IFDIR) {
+      std::cout << "Directory already exists: " << path << std::endl;
+  } else {
+      std::cerr << "Path exists but is not a directory: " << path << std::endl;
+  }
   return;
 }
 
@@ -1274,6 +1309,7 @@ std::string TOP::ConvertiiToString(size_t ii) {
   } else {
     std::cerr << "ii is out of bounds: " << ii << " max variables = " << num_vars << std::endl;
   }
+  return "";
 }
 
 void TOP::SetSimpleCosts() {
@@ -2508,10 +2544,20 @@ void TOP::PolishSolution() {
 */
 
 void TOP::WriteTrajectoryToFile(const Vec13Vec& states, const Vec6Vec& controls, const std::string& filename) {
+  CreateDirectoryIfNotExists(output_dir);
   std::ofstream traj_file(filename);
   if (!traj_file.is_open()) {
-    std::cerr << "Failed to open trajectory file for writing." << std::endl;
+    std::cerr << "Failed to open trajectory file " << filename << "for writing." << std::endl;
     return;
+  } else {
+    std::cout << "Writing trajectory to: " << filename << std::endl;
+  }
+  char full_path[PATH_MAX];
+  if (realpath(filename.c_str(), full_path)) {
+    std::cout << "Full path: " << full_path << std::endl;
+  } else {
+    std::cerr << "Error resolving path: " << filename << " " << strerror(errno) << std::endl;
+    throw std::runtime_error("Error resolving path: " + filename + " " + std::string(strerror(errno)));
   }
   for (size_t i = 0; i < states.size(); ++i) {
     traj_file << states[i].transpose();
@@ -2524,13 +2570,21 @@ void TOP::WriteTrajectoryToFile(const Vec13Vec& states, const Vec6Vec& controls,
 void TOP::WriteTrajectoryToFileForNN(const Vec13& x0, const Vec13& xg, int N, const Vec13Vec& Xsoln,
                                      const Vec6Vec& Usoln,
                                      const std::string& fname) {
-  // Open a file stream to write the data
+  CreateDirectoryIfNotExists(output_dir);
   std::ofstream file(fname);
-
   if (!file.is_open()) {
     std::cerr << "Error: Unable to open file " << fname << " for writing." << std::endl;
     throw std::runtime_error("Error: Unable to open file " + fname + " for writing.");
     return;
+  } else {
+    std::cout << "Writing trajectory to: " << fname << std::endl;
+  }
+  char full_path[PATH_MAX];
+  if (realpath(fname.c_str(), full_path)) {
+    std::cout << "Full path: " << full_path << std::endl;
+  } else {
+    std::cerr << "Error resolving path: " << strerror(errno) << std::endl;
+    throw std::runtime_error("Error resolving path: " + std::string(strerror(errno)));
   }
 
   // Write the initial state (x0) and goal state (xg), each of length 13
@@ -2755,17 +2809,30 @@ void TOP::SaveModel(const std::string& model_path) {
 }
 
 void TOP::LoadModel(const std::string& model_path) {
-  std::cout << "Attempting to load model from " << model_path << std::endl;
   std::cout << "In LoadModel, attempting to load in NN model from " << model_path << std::endl;
   char full_path[PATH_MAX];
   if (realpath(model_path.c_str(), full_path)) {
-    std::cout << "Resolved path: " << full_path << std::endl;
+    std::cout << "Full path: " << full_path << std::endl;
   } else {
     std::cerr << "Error resolving path: " << strerror(errno) << std::endl;
     throw std::runtime_error("Error resolving path: " + std::string(strerror(errno)));
   }
   torch::load(net, model_path);
   std::cout << "Model loaded from " << model_path << std::endl;
+}
+
+std::string TOP::getCurrentTimestamp() {
+  // Get the current time as a time_point
+  auto now = std::chrono::system_clock::now();
+
+  // Convert it to a time_t to work with std::strftime
+  std::time_t now_time = std::chrono::system_clock::to_time_t(now);
+
+  // Convert to a string with a specific format (e.g., YYYY-MM-DD_HH-MM-SS)
+  std::stringstream ss;
+  ss << std::put_time(std::localtime(&now_time), "%Y-%m-%d_%H-%M-%S");
+
+  return ss.str();
 }
 
 }  //  namespace scp
@@ -2954,10 +3021,10 @@ void processProblemInstance(scp::TOP& top_eg, const scp::Vec13& x0, const scp::V
     top_eg.keep_out_zones_.push_back(vbox);
     std::cout << "After adding 1, Number of obstacles: " << top_eg.keep_out_zones_.size() << std::endl;
   }
-
-  std::string fname = "output_trajs" + std::string((saveForNNTraining) ? "_for_NN" : "") + "/" +
+  std::string timestamp = top_eg.getCurrentTimestamp();
+  std::string fname = top_eg.output_dir + std::string((saveForNNTraining) ? "/for_NN_training/" : "/") +
                       std::string((top_eg.is_granite) ? "granite" : "iss") + "_optim_trajectory_" +
-                      std::to_string(problemIndex) + ".txt";
+                      std::to_string(problemIndex) + std::string((saveForNNTraining) ? "" : ("_" + timestamp)) + ".txt";
 
   if (!top_eg.Solve()) {
     if (saveForNNTraining) {
@@ -3081,20 +3148,6 @@ void debugObsAvoidance() {
     }
     std::cout << " ------------- " << std::endl;
   }
-}
-
-std::string getCurrentTimestamp() {
-  // Get the current time as a time_point
-  auto now = std::chrono::system_clock::now();
-
-  // Convert it to a time_t to work with std::strftime
-  std::time_t now_time = std::chrono::system_clock::to_time_t(now);
-
-  // Convert to a string with a specific format (e.g., YYYY-MM-DD_HH-MM-SS)
-  std::stringstream ss;
-  ss << std::put_time(std::localtime(&now_time), "%Y-%m-%d_%H-%M-%S");
-
-  return ss.str();
 }
 
 int main() {
@@ -3249,7 +3302,7 @@ int main() {
     }
     top.TrainModel(files, num_epochs);
 
-    std::string timestamp = getCurrentTimestamp();
+    std::string timestamp = top.getCurrentTimestamp();
     std::string filename = "saved_NN_models/trained_model_" + std::to_string(train_set_size) + "_" + timestamp + ".pt";
     top.SaveModel(filename);
   }

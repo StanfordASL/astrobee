@@ -92,15 +92,20 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
         &PlannerSCPGustoNodelet::DiagnosticsCallback, this, false, true);
     // Create a new optimization problem
     top = new scp::TOP(20., 801);
-    top->Solve();
     // Save node handle
     nh_ = nh;
-    // Save the epsilon value
+    // Get config values
     epsilon_ = cfg_.Get<double>("epsilon");
     enforce_obs_avoidance_const_ = cfg_.Get<bool>("enforce_obs_avoidance_const");
     is_granite_ = cfg_.Get<bool>("is_granite");
     use_nn_warm_start_ = cfg_.Get<bool>("use_nn_warm_start");
     nn_model_path_ = cfg_.Get<std::string>("nn_model_path");
+    // Set config values to TOP for solve
+    top->enforce_obs_avoidance_const = enforce_obs_avoidance_const_;
+    top->is_granite = is_granite_;
+    top->use_nn_warm_start = use_nn_warm_start_;
+    top->nn_model_path = nn_model_path_;
+    top->Solve();
       // Notify initialization complete
     NODELET_DEBUG_STREAM("Initialization complete");
     // Success

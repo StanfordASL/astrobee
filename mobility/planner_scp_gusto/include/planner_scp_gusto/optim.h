@@ -226,6 +226,7 @@ class TOP {
   void SetSimpleCosts();
 
   void PrettyPrintConstraints();
+  void CreateDirectoryIfNotExists(const std::string& path);
   std::string ConvertiiToString(size_t ii);
 
 
@@ -287,6 +288,9 @@ class TOP {
   torch::optim::Adam optimizer;
   void InitTrajWarmStart();
 
+  // Outputs folder
+  std::string output_dir;
+
   // Function to read a single dataset file
   std::tuple<torch::Tensor, torch::Tensor> ReadData(const std::string& filename);
 
@@ -298,6 +302,8 @@ class TOP {
 
   // Function to load the model from disk
   void LoadModel(const std::string& model_path);
+
+  std::string getCurrentTimestamp();
 
   Vec13 ForwardDynamics(Vec13 x, Vec6 u);
   std::tuple<Vec6, Vec6> InferenceNN(Vec13 x0, Vec13 xg);
