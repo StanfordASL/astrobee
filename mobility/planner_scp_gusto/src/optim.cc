@@ -1030,10 +1030,11 @@ void TOP::SetSimpleConstraints() {
     if (keep_out_zones_.size() > 1) {
       std::cout << "[TOP::SetSimpleConstraints] Can only account for 1 keep out zone currently. Found "
                 << std::to_string(keep_out_zones_.size()) << std::endl;
-      throw std::runtime_error("Can only account for 1 keep out zone currently. Found " +
-                               std::to_string(keep_out_zones_.size()));
+      // throw std::runtime_error("Can only account for 1 keep out zone currently. Found " +
+      //                          std::to_string(keep_out_zones_.size()));
     }
-    Eigen::AlignedBox3d box = keep_out_zones_[0];
+    // Eigen::AlignedBox3d box = keep_out_zones_[0];
+    Eigen::AlignedBox3d box = keep_out_zones_.back();
     Eigen::Vector3d ko_min_original = box.min();
     Eigen::Vector3d ko_max_original = box.max();
     std::cout << "[TOP::SetSimpleConstraints] original ko_min: " << ko_min_original.transpose() << std::endl;
