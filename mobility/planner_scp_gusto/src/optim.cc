@@ -3450,9 +3450,26 @@ int main() {
 
   scp::TOP* top;
   top = new scp::TOP(20., 801);
-  top->nn_model_path = "/home/enceladus/astrobee/src/saved_NN_models/trained_model_27_2025-01-03_00-34-39.pt";
-  top->use_nn_warm_start = true;
-  top->Solve();
+  for (int ii = 0; ii < 100; ii++) {
+    top->nn_model_path = "/home/enceladus/astrobee/src/saved_NN_models/trained_model_27_2025-01-03_00-34-39.pt";
+    top->use_nn_warm_start = true;
+    top->is_granite = false;
+    top->x0 << 9.5, -9.8, 4.3, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+    top->xg << 9.5, -6.8, 4.3, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+
+    if (!top->Solve()) {
+      std::cout << "Warm start: " << ii << " Problem could not be solved!" << std::endl;
+    } else {
+      std::cout << "Warm start: " << ii << " Problem solved!" << std::endl;
+    }
+    std::cout << "--------------------------------------------" << std::endl;
+  }
+
+  // scp::TOP* top;
+  // top = new scp::TOP(20., 801);
+  // top->nn_model_path = "/home/enceladus/astrobee/src/saved_NN_models/trained_model_27_2025-01-03_00-34-39.pt";
+  // top->use_nn_warm_start = true;
+  // top->Solve();
 
   return 0;
 }
