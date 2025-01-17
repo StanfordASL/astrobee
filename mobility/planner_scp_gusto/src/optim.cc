@@ -41,6 +41,7 @@ namespace scp {
 
 TOP::TOP(decimal_t Tf_, int N_)
   : N(N_), Tf(Tf_), net(std::make_shared<Net>()), optimizer(net->parameters(), torch::optim::AdamOptions(0.001)) {
+  std::cout << "TOP constructor called!" << std::endl;
   state_dim = 13;
   state_dim_lin = 6;
   state_dim_nlin = 7;
@@ -131,8 +132,8 @@ TOP::TOP(decimal_t Tf_, int N_)
   x_min = -x_max;
 
   // TODO(somrita): remove
-  std::cout << "Min position" << x_min(0) << x_min(1) << x_min(2) << std::endl;
-  std::cout << "Min quaternion" << x_min(6) << x_min(7) << x_min(8) << x_min(9) <<std::endl;
+  std::cout << "[TOP constructor] Min position" << x_min(0) << x_min(1) << x_min(2) << std::endl;
+  std::cout << "[TOP constructor] Min quaternion" << x_min(6) << x_min(7) << x_min(8) << x_min(9) <<std::endl;
 
   ResetSCPParams();
   UpdateProblemDimension(N);
@@ -143,9 +144,9 @@ TOP::TOP(decimal_t Tf_, int N_)
   }
 
   if (solver_ready_) {
-    std::cout << "Solver ready to solve!" << std::endl;
+    std::cout << "[TOP constructor] Solver ready to solve!" << std::endl;
   } else {
-    std::cout << "Solver failed to instantiate!" << std::endl;
+    std::cout << "[TOP constructor] Solver failed to instantiate!" << std::endl;
   }
 }
 
@@ -187,27 +188,27 @@ size_t TOP::GetNumTOPConstraints() {
     throw std::runtime_error("Error: Constraints not implemented yet!");
     return false;
   }
-  std::cout << "Init cond: " << num_init_cond_constr << std::endl;
-  std::cout << "Final cond: " << num_final_cond_constr << std::endl;
-  std::cout << "Lin dynamics: " << num_lin_dynamics_constr << std::endl;
-  std::cout << "Rot dynamics: " << num_rot_dynamics_constr << std::endl;
-  std::cout << "Obs avoidance: " << num_obs_avoidance_const << std::endl;
-  std::cout << "State bounds: " << num_state_bounds_const << std::endl;
+  // std::cout << "Init cond: " << num_init_cond_constr << std::endl;
+  // std::cout << "Final cond: " << num_final_cond_constr << std::endl;
+  // std::cout << "Lin dynamics: " << num_lin_dynamics_constr << std::endl;
+  // std::cout << "Rot dynamics: " << num_rot_dynamics_constr << std::endl;
+  // std::cout << "Obs avoidance: " << num_obs_avoidance_const << std::endl;
+  // std::cout << "State bounds: " << num_state_bounds_const << std::endl;
 
-  // Print which constraints are enabled and corresponding number of constraints
-  std::cout << "enforce_init_cond: " << enforce_init_cond << " (" << num_init_cond_constr << " constraints)"
-            << std::endl;
-  std::cout << "enforce_final_cond: " << enforce_final_cond << " (" << num_final_cond_constr << " constraints)"
-            << std::endl;
-  std::cout << "enforce_lin_dynamics: " << enforce_lin_dynamics << " (" << num_lin_dynamics_constr << " constraints)"
-            << std::endl;
-  std::cout << "enforce_rot_dynamics: " << enforce_rot_dynamics << " (" << num_rot_dynamics_constr << " constraints)"
-            << std::endl;
-  std::cout << "enforce_obs_avoidance_const: " << enforce_obs_avoidance_const << " (" << num_obs_avoidance_const
-            << " constraints)" << std::endl;
-  std::cout << "enforce_state_bounds: " << enforce_state_bounds << " (" << num_state_bounds_const << " constraints)"
-            << std::endl;
-  std::cout << "Total constraints: " << num_total_constr << std::endl;
+  // // Print which constraints are enabled and corresponding number of constraints
+  // std::cout << "enforce_init_cond: " << enforce_init_cond << " (" << num_init_cond_constr << " constraints)"
+  //           << std::endl;
+  // std::cout << "enforce_final_cond: " << enforce_final_cond << " (" << num_final_cond_constr << " constraints)"
+  //           << std::endl;
+  // std::cout << "enforce_lin_dynamics: " << enforce_lin_dynamics << " (" << num_lin_dynamics_constr << " constraints)"
+  //           << std::endl;
+  // std::cout << "enforce_rot_dynamics: " << enforce_rot_dynamics << " (" << num_rot_dynamics_constr << " constraints)"
+  //           << std::endl;
+  // std::cout << "enforce_obs_avoidance_const: " << enforce_obs_avoidance_const << " (" << num_obs_avoidance_const
+  //           << " constraints)" << std::endl;
+  // std::cout << "enforce_state_bounds: " << enforce_state_bounds << " (" << num_state_bounds_const << " constraints)"
+  //           << std::endl;
+  // std::cout << "Total constraints: " << num_total_constr << std::endl;
 
   return num_total_constr;
 
@@ -261,8 +262,6 @@ void TOP::UpdateProblemDimension(size_t N_) {
     solver->data()->clearLinearConstraintsMatrix();
   }
 
-  std::cout << "TOP::UpdateProblemDimension: Cleared solver" << std::endl;
-
   Xprev.resize(N);
   Uprev.resize(N-1);
 
@@ -278,7 +277,7 @@ void TOP::UpdateProblemDimension(size_t N_) {
   size_t num_vars = GetNumTOPVariables();
   size_t num_cons = GetNumTOPConstraints();
 
-  std::cout << "TOP::UpdateProblemDimension: Num vars: " << num_vars << " Num cons: " << num_cons << std::endl;
+  std::cout << "[TOP::UpdateProblemDimension] Num vars: " << num_vars << " Num cons: " << num_cons << std::endl;
 
   hessian.resize(num_vars, num_vars);
   linear_con_mat.resize(num_cons, num_vars);
@@ -291,10 +290,10 @@ void TOP::UpdateProblemDimension(size_t N_) {
   // UpdateRotationalDynamics();
 
   if (use_nn_warm_start) {
-    std::cout << "TOP::UpdateProblemDimension: Using NN warm start" << std::endl;
+    std::cout << "[TOP::UpdateProblemDimension] Using NN warm start" << std::endl;
     InitTrajWarmStart();
   } else {
-    std::cout << "TOP::UpdateProblemDimension: Using straight line cold start" << std::endl;
+    std::cout << "[TOP::UpdateProblemDimension] Using straight line cold start" << std::endl;
     InitTrajStraightline();
   }
 
@@ -365,14 +364,16 @@ void TOP::InitTrajStraightline() {
   // http://wiki.ros.org/tf2/Tutorials/Quaternions#Components_of_a_quaternion
   Quat q0 = Quat(x0(9), x0(6), x0(7), x0(8));
   Quat qg = Quat(xg(9), xg(6), xg(7), xg(8));
-  std::cout << "x0: " << x0(0) << " " << x0(1) << " " << x0(2) << " " << x0(3) << " " << x0(4) << " " << x0(5) << " "
-            << x0(6) << " " << x0(7) << " " << x0(8) << " " << x0(9) << " " << x0(10) << " " << x0(11) << " " << x0(12)
+  std::cout << "[TOP::InitTrajStraightLine] x0: " << x0(0) << " " << x0(1) << " " << x0(2) << " " << x0(3) << " "
+            << x0(4) << " " << x0(5) << " " << x0(6) << " " << x0(7) << " " << x0(8) << " " << x0(9) << " " << x0(10)
+            << " " << x0(11) << " " << x0(12) << std::endl;
+  std::cout << "[TOP::InitTrajStraightLine] xg: " << xg(0) << " " << xg(1) << " " << xg(2) << " " << xg(3) << " "
+            << xg(4) << " " << xg(5) << " " << xg(6) << " " << xg(7) << " " << xg(8) << " " << xg(9) << " " << xg(10)
+            << " " << xg(11) << " " << xg(12) << std::endl;
+  std::cout << "[TOP::InitTrajStraightLine] q0: " << q0.x() << " " << q0.y() << " " << q0.z() << " " << q0.w()
             << std::endl;
-  std::cout << "xg: " << xg(0) << " " << xg(1) << " " << xg(2) << " " << xg(3) << " " << xg(4) << " " << xg(5) << " "
-            << xg(6) << " " << xg(7) << " " << xg(8) << " " << xg(9) << " " << xg(10) << " " << xg(11) << " " << xg(12)
+  std::cout << "[TOP::InitTrajStraightLine] qg: " << qg.x() << " " << qg.y() << " " << qg.z() << " " << qg.w()
             << std::endl;
-  std::cout << "q0: " << q0.x() << " " << q0.y() << " " << q0.z() << " " << q0.w() << std::endl;
-  std::cout << "qg: " << qg.x() << " " << qg.y() << " " << qg.z() << " " << qg.w() << std::endl;
 
   for (size_t ii = 0; ii < N; ii++) {
     Xprev[ii] = x0 + (xg-x0)*ii/(N-1.);
@@ -608,18 +609,19 @@ Mat4x3 TOP::CalculateQMat(const Vec4& quaternion) {
 }
 
 void TOP::SetSimpleConstraints() {
-  std::cout << "Setting simple constraints" << std::endl;
-  std::cout << "enforce_init_cond: " << enforce_init_cond << std::endl;
-  std::cout << "enforce_final_cond: " << enforce_final_cond << std::endl;
-  std::cout << "enforce_lin_dynamics: " << enforce_lin_dynamics << std::endl;
-  std::cout << "enforce_rot_dynamics: " << enforce_rot_dynamics << std::endl;
-  std::cout << "enforce_obs_avoidance_const: " << enforce_obs_avoidance_const << std::endl;
-  std::cout << "enforce_state_bounds: " << enforce_state_bounds << std::endl;
+  std::cout << "Setting simple constraints..." << std::endl;
+  std::cout << "[TOP::SetSimpleConstraints] enforce_init_cond: " << enforce_init_cond << std::endl;
+  std::cout << "[TOP::SetSimpleConstraints] enforce_final_cond: " << enforce_final_cond << std::endl;
+  std::cout << "[TOP::SetSimpleConstraints] enforce_lin_dynamics: " << enforce_lin_dynamics << std::endl;
+  std::cout << "[TOP::SetSimpleConstraints] enforce_rot_dynamics: " << enforce_rot_dynamics << std::endl;
+  std::cout << "[TOP::SetSimpleConstraints] enforce_obs_avoidance_const: " << enforce_obs_avoidance_const << std::endl;
+  std::cout << "[TOP::SetSimpleConstraints] enforce_state_bounds: " << enforce_state_bounds << std::endl;
 
   Mat7 eye;
   eye.setIdentity();
 
   size_t row_idx = 0;
+  auto start_time = std::chrono::high_resolution_clock::now();
 
   // Initial state
   if (enforce_init_cond) {
@@ -1029,20 +1031,21 @@ void TOP::SetSimpleConstraints() {
 
   if (enforce_obs_avoidance_const) {
     if (keep_out_zones_.size() == 0) {
-      std::cout << "No keep out zones specified. Skipping obstacle avoidance constraints." << std::endl;
+      std::cout << "[TOP::SetSimpleConstraints] No keep out zones specified. Skipping obstacle avoidance constraints."
+                << std::endl;
       return;
     }
     if (keep_out_zones_.size() > 1) {
-      std::cout << "Can only account for 1 keep out zone currently. Found " << std::to_string(keep_out_zones_.size())
-                << std::endl;
+      std::cout << "[TOP::SetSimpleConstraints] Can only account for 1 keep out zone currently. Found "
+                << std::to_string(keep_out_zones_.size()) << std::endl;
       throw std::runtime_error("Can only account for 1 keep out zone currently. Found " +
                                std::to_string(keep_out_zones_.size()));
     }
     Eigen::AlignedBox3d box = keep_out_zones_[0];
     Eigen::Vector3d ko_min_original = box.min();
     Eigen::Vector3d ko_max_original = box.max();
-    std::cout << "original ko_min: " << ko_min_original.transpose() << std::endl;
-    std::cout << "original ko_max: " << ko_max_original.transpose() << std::endl;
+    std::cout << "[TOP::SetSimpleConstraints] original ko_min: " << ko_min_original.transpose() << std::endl;
+    std::cout << "[TOP::SetSimpleConstraints] original ko_max: " << ko_max_original.transpose() << std::endl;
     // Add buffer to obstacle
     Eigen::Vector3d ko_min = ko_min_original - Eigen::Vector3d(obs_clearance, obs_clearance, obs_clearance);
     Eigen::Vector3d ko_max = ko_max_original + Eigen::Vector3d(obs_clearance, obs_clearance, obs_clearance);
@@ -1051,14 +1054,14 @@ void TOP::SetSimpleConstraints() {
     ko_min = ko_min.cwiseMax(MinPos());  // clip ko_min to be >= pose min
     ko_max = ko_max.cwiseMin(MaxPos());  // clip ko_max to be <= pose max
 
-    std::cout << "pose min: " << MinPos().transpose() << std::endl;
-    std::cout << "pose max: " << MaxPos().transpose() << std::endl;
+    std::cout << "[TOP::SetSimpleConstraints] pose min: " << MinPos().transpose() << std::endl;
+    std::cout << "[TOP::SetSimpleConstraints] pose max: " << MaxPos().transpose() << std::endl;
 
     // Print updated ko_min and ko_max
-    std::cout << "ko_min: " << ko_min.transpose() << std::endl;
-    std::cout << "ko_max: " << ko_max.transpose() << std::endl;
+    std::cout << "[TOP::SetSimpleConstraints] ko_min: " << ko_min.transpose() << std::endl;
+    std::cout << "[TOP::SetSimpleConstraints] ko_max: " << ko_max.transpose() << std::endl;
     Eigen::Vector3d ko_center = (ko_min + ko_max)/2;
-    std::cout << "ko_center: " << ko_center.transpose() << std::endl;
+    std::cout << "[TOP::SetSimpleConstraints] ko_center: " << ko_center.transpose() << std::endl;
     for (size_t ii = 0; ii < N-1; ii++) {
       for (size_t jj = 0; jj < 3; jj++) {
         decimal_t lb = MinPos()[jj];
@@ -1172,7 +1175,9 @@ void TOP::SetSimpleConstraints() {
       throw std::runtime_error("lower_bound is greater than upper_bound");
     }
   }
-  std::cout << "Finished setting simple constraints" << std::endl;
+  auto end_time = std::chrono::high_resolution_clock::now();
+  auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+  std::cout << "Finished setting simple constraints in : " << duration << " ms." << std::endl;
   PrettyPrintConstraints();
 }
 
@@ -1185,7 +1190,7 @@ void TOP::PrettyPrintConstraints() {
       std::cerr << "Error opening file " << fname << " for writing!" << std::endl;
       return;
   }
-  std::cout << "Printing constraints to file " << fname << std::endl;
+  std::cout << "[TOP::PrettyPrintConstraints] Printing constraints to file " << fname << std::endl;
 
   char full_path[PATH_MAX];
   if (realpath(fname.c_str(), full_path)) {
@@ -1348,25 +1353,26 @@ bool TOP::Solve() {
   solved_ = false;
   ResetSCPParams();
   UpdateProblemDimension(N);
-  std::cout << "TOP::Solve: Updated problem dimension" << std::endl;
-  std::cout << "linear_con_mat size: " << linear_con_mat.rows() << " x " << linear_con_mat.cols() << std::endl;
+  std::cout << "[TOP::Solve] Updated problem dimension" << std::endl;
+  std::cout << "[TOP::Solve] linear_con_mat size: " << linear_con_mat.rows() << " x " << linear_con_mat.cols()
+            << std::endl;
   bool add_custom_keep_out_zone = true;
 
-  std::cout << "SCP:: start of init traj is " << Xprev[0].transpose() << std::endl;
-  std::cout << "SCP:: end of init traj is " << Xprev[N-1].transpose() << std::endl;
+  std::cout << "[TOP::Solve] start of init traj is " << Xprev[0].transpose() << std::endl;
+  std::cout << "[TOP::Solve] end of init traj is " << Xprev[N-1].transpose() << std::endl;
 
-  std::cout << "TOP:: mass: " << mass << std::endl;
-  std::cout << "TOP:: inertia: " << J << std::endl;
+  std::cout << "[TOP::Solve] mass: " << mass << std::endl;
+  std::cout << "[TOP::Solve] inertia: " << J << std::endl;
 
-  std::cout << "TOP:: desired accel: " << desired_accel_ << std::endl;
+  std::cout << "[TOP::Solve] desired accel: " << desired_accel_ << std::endl;
 
-  std::cout << "TOP:: Keep in zones: " << std::endl;
+  std::cout << "[TOP::Solve] Keep in zones: " << std::endl;
   for (size_t i = 0; i < keep_in_zones_.size(); ++i) {
     std::cout << "Zone " << i << std::endl;
     std::cout << "min: " << keep_in_zones_[i].min().transpose() << std::endl;
     std::cout << "max: " << keep_in_zones_[i].max().transpose() << std::endl;
   }
-  std::cout << "TOP:: Keep out zones: " << std::endl;
+  std::cout << "[TOP::Solve] Keep out zones: " << std::endl;
   for (size_t i = 0; i < keep_out_zones_.size(); ++i) {
     std::cout << "Zone " << i << std::endl;
     std::cout << "min: " << keep_out_zones_[i].min().transpose() << std::endl;
@@ -1388,8 +1394,8 @@ bool TOP::Solve() {
   // TODO(somrita): Reset max_iter
   max_iter = 1;
   for (size_t kk = 0; kk < max_iter; kk++) {
-    SetSimpleConstraints();
-    SetSimpleCosts();
+    // SetSimpleConstraints();
+    // SetSimpleCosts();
 
     if (!solver->updateLinearConstraintsMatrix(linear_con_mat)) {
       solver_ready_ = false;
@@ -1517,8 +1523,8 @@ void TOP::ValidationChecks() {
     min_pos = pos.cwiseMin(min_pos);
     max_pos = pos.cwiseMax(max_pos);
   }
-  std::cout << "Minimum position in solution: " << min_pos.transpose() << std::endl;
-  std::cout << "Maximum position in solution: " << max_pos.transpose() << std::endl;
+  std::cout << "[TOP::ValidationChecks] Minimum position in solution: " << min_pos.transpose() << std::endl;
+  std::cout << "[TOP::ValidationChecks] Maximum position in solution: " << max_pos.transpose() << std::endl;
 
   // Check boundary conditions
   decimal_t eps = 1e-5;
@@ -2550,7 +2556,7 @@ void TOP::WriteTrajectoryToFile(const Vec13Vec& states, const Vec6Vec& controls,
     std::cerr << "Failed to open trajectory file " << filename << "for writing." << std::endl;
     return;
   } else {
-    std::cout << "Writing trajectory to: " << filename << std::endl;
+    std::cout << "[TOP::WriteTrajectoryToFile] Writing trajectory to: " << filename << std::endl;
   }
   char full_path[PATH_MAX];
   if (realpath(filename.c_str(), full_path)) {
@@ -2652,18 +2658,18 @@ Vec13 TOP::ForwardDynamics(Vec13 x, Vec6 u) {
 }
 
 std::tuple<Vec6, Vec6> TOP::InferenceNN(Vec13 x0, Vec13 xg) {
-  std::cout << "Inference from neural network" << std::endl;
+  std::cout << "[TOP::InferenceNN]" << std::endl;
   // Create input of length 26 from x0 and xg
   torch::Tensor input = torch::zeros({1, 26});
   for (size_t i = 0; i < 13; ++i) {
     input[0][i] = x0[i];
     input[0][i + 13] = xg[i];
   }
-  std::cout << "Input tensor: " << input << std::endl;
+  std::cout << "[TOP::InferenceNN] Input tensor: " << input << std::endl;
   // Perform inference
   net->eval();
   torch::Tensor output = net->forward(input);
-  std::cout << "Output tensor: " << output << std::endl;
+  std::cout << "[TOP::InferenceNN] Output tensor: " << output << std::endl;
   // Extract U0 and Uf from output
   Vec6 U0, Uf;
   for (size_t i = 0; i < 6; ++i) {
@@ -2675,7 +2681,7 @@ std::tuple<Vec6, Vec6> TOP::InferenceNN(Vec13 x0, Vec13 xg) {
 
 /* Function to warm start from neural network */
 std::tuple<Vec13Vec, Vec6Vec> TOP::WarmStartFromNN(Vec13 x0, Vec13 xg) {
-  std::cout << "Warm starting from neural network" << std::endl;
+  std::cout << "[TOP::WarmStartFromNN]" << std::endl;
   bool simplify = false;
   if (simplify) {
     // Simple case: just set to initial and final states
@@ -2809,7 +2815,7 @@ void TOP::SaveModel(const std::string& model_path) {
 }
 
 void TOP::LoadModel(const std::string& model_path) {
-  std::cout << "In LoadModel, attempting to load in NN model from " << model_path << std::endl;
+  std::cout << "[TOP::LoadModel] Attempting to load in NN model from " << model_path << std::endl;
   char full_path[PATH_MAX];
   if (realpath(model_path.c_str(), full_path)) {
     std::cout << "Full path: " << full_path << std::endl;
@@ -2818,7 +2824,7 @@ void TOP::LoadModel(const std::string& model_path) {
     throw std::runtime_error("Error resolving path: " + std::string(strerror(errno)));
   }
   torch::load(net, model_path);
-  std::cout << "Model loaded from " << model_path << std::endl;
+  std::cout << "[TOP::LoadModel] Model successfully loaded from " << model_path << std::endl;
 }
 
 std::string TOP::getCurrentTimestamp() {
