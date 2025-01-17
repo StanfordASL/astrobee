@@ -621,12 +621,15 @@ void TOP::SetSimpleConstraints() {
   eye.setIdentity();
 
   size_t row_idx = 0;
+
+  std::vector<Eigen::Triplet<double>> triplets;
+
   auto start_time = std::chrono::high_resolution_clock::now();
 
   // Initial state
   if (enforce_init_cond) {
     for (size_t ii = 0; ii < state_dim; ii++) {
-      linear_con_mat.coeffRef(row_idx, ii) = 1.0;  // Constrain x[0][i] (initial state component)
+      triplets.emplace_back(row_idx, ii, 1.0);  // Constrain x[0][i] (initial state component)
       lower_bound(row_idx) = x0(ii);
       upper_bound(row_idx) = x0(ii);
       row_idx++;
@@ -636,7 +639,7 @@ void TOP::SetSimpleConstraints() {
   // Goal state
   if (enforce_final_cond) {
     for (size_t ii = 0; ii < state_dim; ii++) {
-      linear_con_mat.coeffRef(row_idx, state_dim * (N - 1) + ii) = 1.0;  // Constrain x[N-1][i] (final state component)
+      triplets.emplace_back(row_idx, state_dim * (N - 1) + ii, 1.0);  // Constrain x[N-1][i] (final state component)
       lower_bound(row_idx) = xg(ii);
       upper_bound(row_idx) = xg(ii);
       row_idx++;
@@ -649,30 +652,25 @@ void TOP::SetSimpleConstraints() {
   }
 
   if (enforce_lin_dynamics) {
-    std::vector<Eigen::Triplet<double>> dynamics_triplets;
     for (size_t ii = 0; ii < N-1; ii++) {
       // Double integrator dynamics
       for (size_t jj = 0; jj < pos_dim; jj++) {
         // Position update: x_{i+1} = x_i + v_i * dt
-        dynamics_triplets.emplace_back(row_idx, ii * state_dim + jj, -1.0);       // -x_i
-        dynamics_triplets.emplace_back(row_idx, ii * state_dim + pos_dim + jj, -dh);   // -v_i * dt
-        dynamics_triplets.emplace_back(row_idx, (ii + 1) * state_dim + jj, 1.0);  // x_{i+1}
+        triplets.emplace_back(row_idx, ii * state_dim + jj, -1.0);       // -x_i
+        triplets.emplace_back(row_idx, ii * state_dim + pos_dim + jj, -dh);   // -v_i * dt
+        triplets.emplace_back(row_idx, (ii + 1) * state_dim + jj, 1.0);  // x_{i+1}
         lower_bound(row_idx) = 0.0;
         upper_bound(row_idx) = 0.0;
         ++row_idx;
 
         // Velocity update: v_{i+1} = v_i + u_j * dt / mass
-        dynamics_triplets.emplace_back(row_idx, ii * state_dim + pos_dim + jj, -1.0);       // -v_i
-        dynamics_triplets.emplace_back(row_idx, N * state_dim + ii * control_dim + jj, -dh/mass);    // -u_j * dt/mass
-        dynamics_triplets.emplace_back(row_idx, (ii + 1) * state_dim + pos_dim + jj, 1.0);  // v_{i+1}
+        triplets.emplace_back(row_idx, ii * state_dim + pos_dim + jj, -1.0);       // -v_i
+        triplets.emplace_back(row_idx, N * state_dim + ii * control_dim + jj, -dh/mass);    // -u_j * dt/mass
+        triplets.emplace_back(row_idx, (ii + 1) * state_dim + pos_dim + jj, 1.0);  // v_{i+1}
         lower_bound(row_idx) = 0.0;
         upper_bound(row_idx) = 0.0;
         ++row_idx;
       }
-    }
-    // Add dynamics constraints to A matrix
-    for (const auto& triplet : dynamics_triplets) {
-      linear_con_mat.coeffRef(triplet.row(), triplet.col()) = triplet.value();
     }
   }
 
@@ -720,7 +718,6 @@ void TOP::SetSimpleConstraints() {
 
   if (enforce_rot_dynamics) {
     NormalizeQuaternions();
-    std::vector<Eigen::Triplet<double>> dynamics_triplets;
     for (size_t ii = 0; ii < N - 1; ii++) {
       // Quaternion kinematics update
       // Quaternion update: q_{i+1} = q_i + 0.5 * Q(q_i) * omega_i * dt
@@ -729,10 +726,10 @@ void TOP::SetSimpleConstraints() {
       Eigen::Matrix<double, 4, 3> QMat = CalculateQMat(q_i);
       for (size_t jj = 0; jj < 4; jj++) {
         for (size_t kk = 0; kk < 3; kk++) {
-          dynamics_triplets.emplace_back(row_idx, ii * state_dim + pos_dim + lin_vel_dim + jj, -1.0);  // -q_i
-          dynamics_triplets.emplace_back(row_idx, ii * state_dim + pos_dim + lin_vel_dim + quat_dim + kk,
+          triplets.emplace_back(row_idx, ii * state_dim + pos_dim + lin_vel_dim + jj, -1.0);  // -q_i
+          triplets.emplace_back(row_idx, ii * state_dim + pos_dim + lin_vel_dim + quat_dim + kk,
                                          -0.5 * dh * QMat(jj, kk));  // -0.5 * Q_mat * omega_i * dt
-          dynamics_triplets.emplace_back(row_idx, (ii + 1) * state_dim + pos_dim + lin_vel_dim + jj,
+          triplets.emplace_back(row_idx, (ii + 1) * state_dim + pos_dim + lin_vel_dim + jj,
                                          1.0);  // q_{i+1}
         }
         // Enforce quaternion normalization at time step `ii+1`
@@ -753,22 +750,17 @@ void TOP::SetSimpleConstraints() {
       Eigen::Vector3d frot_mat = J.inverse() * (-omega_i.cross(J * omega_i));
       for (size_t jj = 0; jj < 3; jj++) {
         // omega_{i+1} = omega_i + J^{-1} * (u_torque - omega_i cross (J * omega_i)) * dt
-        dynamics_triplets.emplace_back(row_idx, ii * state_dim + pos_dim + lin_vel_dim + quat_dim + jj,
+        triplets.emplace_back(row_idx, ii * state_dim + pos_dim + lin_vel_dim + quat_dim + jj,
                                        -1.0);  // -omega_i
-        dynamics_triplets.emplace_back(row_idx, N * state_dim + ii * control_dim + control_dim_lin + jj,
+        triplets.emplace_back(row_idx, N * state_dim + ii * control_dim + control_dim_lin + jj,
                                        -dh / J(jj, jj));  // -u_torque * dt / J
-        dynamics_triplets.emplace_back(row_idx, (ii + 1) * state_dim + pos_dim + lin_vel_dim + quat_dim + jj,
+        triplets.emplace_back(row_idx, (ii + 1) * state_dim + pos_dim + lin_vel_dim + quat_dim + jj,
                                        1.0);  // omega_{i+1}
 
         lower_bound(row_idx) = frot_mat(jj);
         upper_bound(row_idx) = frot_mat(jj);
         ++row_idx;
       }
-    }
-
-    // Add rotational dynamics constraints to A matrix
-    for (const auto& triplet : dynamics_triplets) {
-      linear_con_mat.coeffRef(triplet.row(), triplet.col()) = triplet.value();
     }
   }
 
@@ -779,17 +771,17 @@ void TOP::SetSimpleConstraints() {
         size_t s_slack_var_idx = state_dim*N+control_dim*(N-1)+ii*num_force_norm_slack_vars_per_iter+jj;
         size_t this_control_idx = state_dim*N+control_dim*ii+jj;
         // -s <=0
-        linear_con_mat.coeffRef(row_idx, s_slack_var_idx) = -1.0;
+        triplets.emplace_back(row_idx, s_slack_var_idx, -1.0);
         upper_bound(row_idx) = 0.0;
         row_idx++;
         // -s - a <= 0
-        linear_con_mat.coeffRef(row_idx, s_slack_var_idx) = -1.0;
-        linear_con_mat.coeffRef(row_idx, this_control_idx) = -1.0;
+        triplets.emplace_back(row_idx, s_slack_var_idx, -1.0);
+        triplets.emplace_back(row_idx, this_control_idx, -1.0);
         upper_bound(row_idx) = 0.0;
         row_idx++;
         // a - s <= 0
-        linear_con_mat.coeffRef(row_idx, s_slack_var_idx) = -1.0;
-        linear_con_mat.coeffRef(row_idx, this_control_idx) = 1.0;
+        triplets.emplace_back(row_idx, s_slack_var_idx, -1.0);
+        triplets.emplace_back(row_idx, this_control_idx, 1.0);
         upper_bound(row_idx) = 0.0;
         row_idx++;
       }
@@ -801,20 +793,20 @@ void TOP::SetSimpleConstraints() {
         size_t z_slack_var_idx = state_dim*N+control_dim*(N-1)+ii*num_force_norm_slack_vars_per_iter+4;
         for (size_t jj = 0; jj < control_dim_lin; jj++) {
           size_t s_slack_var_idx = state_dim*N+control_dim*(N-1)+ii*num_force_norm_slack_vars_per_iter+jj;
-          linear_con_mat.coeffRef(row_idx, s_slack_var_idx) = 1.0;
+          triplets.emplace_back(row_idx, s_slack_var_idx, 1.0);
         }
-        linear_con_mat.coeffRef(row_idx, z_slack_var_idx) = -1.0;
+        triplets.emplace_back(row_idx, z_slack_var_idx, -1.0);
         upper_bound(row_idx) = F_max_;
         row_idx++;
 
         // -zk <= 0
-        linear_con_mat.coeffRef(row_idx, z_slack_var_idx) = -1.0;
+        triplets.emplace_back(row_idx, z_slack_var_idx, -1.0);
         upper_bound(row_idx) = 0;
         row_idx++;
       } else {  // sum(s_ik) <= F_max
         for (size_t jj = 0; jj < control_dim_lin; jj++) {
           size_t s_slack_var_idx = state_dim*N+control_dim*(N-1)+ii*num_force_norm_slack_vars_per_iter+jj;
-          linear_con_mat.coeffRef(row_idx, s_slack_var_idx) = 1.0;
+          triplets.emplace_back(row_idx, s_slack_var_idx, 1.0);
         }
         upper_bound(row_idx) = F_max_;
         row_idx++;
@@ -830,17 +822,17 @@ void TOP::SetSimpleConstraints() {
         ii*num_moment_norm_slack_vars_per_iter+jj;
         size_t this_control_idx = state_dim*N+control_dim*ii+control_dim_lin+jj;
         // -s <=0
-        linear_con_mat.coeffRef(row_idx, s_slack_var_idx) = -1.0;
+        triplets.emplace_back(row_idx, s_slack_var_idx, -1.0);
         upper_bound(row_idx) = 0.0;
         row_idx++;
         // -s - a <= 0
-        linear_con_mat.coeffRef(row_idx, s_slack_var_idx) = -1.0;
-        linear_con_mat.coeffRef(row_idx, this_control_idx) = -1.0;
+        triplets.emplace_back(row_idx, s_slack_var_idx, -1.0);
+        triplets.emplace_back(row_idx, this_control_idx, -1.0);
         upper_bound(row_idx) = 0.0;
         row_idx++;
         // a - s <= 0
-        linear_con_mat.coeffRef(row_idx, s_slack_var_idx) = -1.0;
-        linear_con_mat.coeffRef(row_idx, this_control_idx) = 1.0;
+        triplets.emplace_back(row_idx, s_slack_var_idx, -1.0);
+        triplets.emplace_back(row_idx, this_control_idx, 1.0);
         upper_bound(row_idx) = 0.0;
         row_idx++;
       }
@@ -858,14 +850,14 @@ void TOP::SetSimpleConstraints() {
         for (size_t jj = 0; jj < control_dim_nlin; jj++) {
           size_t s_slack_var_idx = state_dim*N+control_dim*(N-1)+num_force_norm_slack_vars+
           ii*num_moment_norm_slack_vars_per_iter+jj;
-          linear_con_mat.coeffRef(row_idx, s_slack_var_idx) = 1.0;
+          triplets.emplace_back(row_idx, s_slack_var_idx, 1.0);
         }
-        linear_con_mat.coeffRef(row_idx, z_slack_var_idx) = -1.0;
+        triplets.emplace_back(row_idx, z_slack_var_idx, -1.0);
         upper_bound(row_idx) = M_max_;
         row_idx++;
 
         // -zk <= 0
-        linear_con_mat.coeffRef(row_idx, z_slack_var_idx) = -1.0;
+        triplets.emplace_back(row_idx, z_slack_var_idx, -1.0);
         upper_bound(row_idx) = 0;
         row_idx++;
 
@@ -873,7 +865,7 @@ void TOP::SetSimpleConstraints() {
         for (size_t jj = 0; jj < control_dim_nlin; jj++) {
           size_t s_slack_var_idx = state_dim*N+control_dim*(N-1)+num_force_norm_slack_vars+
             ii*num_moment_norm_slack_vars_per_iter+jj;
-          linear_con_mat.coeffRef(row_idx, s_slack_var_idx) = 1.0;
+          triplets.emplace_back(row_idx, s_slack_var_idx, 1.0);
         }
         upper_bound(row_idx) = M_max_;
         row_idx++;
@@ -889,19 +881,19 @@ void TOP::SetSimpleConstraints() {
           num_force_norm_slack_vars+num_moment_norm_slack_vars+
           state_bd_dim*ii+jj;
         // -z_ik <= 0
-        linear_con_mat.coeffRef(row_idx, slack_var_idx) = -1.0;
+        triplets.emplace_back(row_idx, slack_var_idx, -1.0);
         upper_bound(row_idx) = 0;
         row_idx++;
 
         // -x_ik -z_ik <= -x_min(i) ignoring initial condition ii=0
-        linear_con_mat.coeffRef(row_idx, slack_var_idx) = -1.0;
+        triplets.emplace_back(row_idx, slack_var_idx, -1.0);
         if (jj <= 2) {
           // position jj[0..2] maps to x_min[0...2]
-          linear_con_mat.coeffRef(row_idx, state_dim*(ii+1)+jj) = -1.0;
+          triplets.emplace_back(row_idx, state_dim*(ii+1)+jj, -1.0);
           upper_bound(row_idx) = -x_min(jj);
         } else {
           // quaternion jj[3...6] maps to x_min[6...9]
-          linear_con_mat.coeffRef(row_idx, state_dim*(ii+1)+jj+3) = -1.0;
+          triplets.emplace_back(row_idx, state_dim*(ii+1)+jj+3, -1.0);
           upper_bound(row_idx) = -x_min(jj+3);
         }
         row_idx++;
@@ -918,19 +910,19 @@ void TOP::SetSimpleConstraints() {
           state_bd_dim*(N-1)+
           state_bd_dim*ii+jj;
         // -z_ik <= 0
-        linear_con_mat.coeffRef(row_idx, slack_var_idx) = -1.0;
+        triplets.emplace_back(row_idx, slack_var_idx, -1.0);
         upper_bound(row_idx) = 0;
         row_idx++;
 
         // x_ik -z_ik <= x_max(i) ignoring initial condition ii=0
-        linear_con_mat.coeffRef(row_idx, slack_var_idx) = -1.0;
+        triplets.emplace_back(row_idx, slack_var_idx, -1.0);
         if (jj <= 2) {
           // position jj[0..2] maps to x_min[0...2]
-          linear_con_mat.coeffRef(row_idx, state_dim*(ii+1)+jj) = 1.0;
+          triplets.emplace_back(row_idx, state_dim*(ii+1)+jj, 1.0);
           upper_bound(row_idx) = x_max(jj);
         } else {
           // quaternion jj[3...6] maps to x_min[6...9]
-          linear_con_mat.coeffRef(row_idx, state_dim*(ii+1)+jj+3) = 1.0;
+          triplets.emplace_back(row_idx, state_dim*(ii+1)+jj+3, 1.0);
           upper_bound(row_idx) = x_max(jj+3);
         }
         row_idx++;
@@ -946,7 +938,7 @@ void TOP::SetSimpleConstraints() {
         state_bd_dim*(N-1)+
         state_bd_dim*(N-1) + 4*ii + 3;
       // -z_k <=0
-      linear_con_mat.coeffRef(row_idx, z_slack_var_idx) = -1.0;
+      triplets.emplace_back(row_idx, z_slack_var_idx, -1.0);
       upper_bound(row_idx) = 0;
       row_idx++;
       for (size_t jj = 0; jj < lin_vel_dim; jj++) {
@@ -956,17 +948,17 @@ void TOP::SetSimpleConstraints() {
           state_bd_dim*(N-1) + 4*ii + jj;
         size_t this_state_idx = state_dim*(ii+1)+ 3 + jj;  // skip ii=0, skip 3 position states
         // -s_ik <= 0
-        linear_con_mat.coeffRef(row_idx, s_slack_var_idx) = -1.0;
+        triplets.emplace_back(row_idx, s_slack_var_idx, -1.0);
         upper_bound(row_idx) = 0;
         row_idx++;
         // -x_ik -s_ik <= 0
-        linear_con_mat.coeffRef(row_idx, this_state_idx) = -1.0;
-        linear_con_mat.coeffRef(row_idx, s_slack_var_idx) = -1.0;
+        triplets.emplace_back(row_idx, this_state_idx, -1.0);
+        triplets.emplace_back(row_idx, s_slack_var_idx, -1.0);
         upper_bound(row_idx) = 0;
         row_idx++;
         // x_ik -s_ik <= 0
-        linear_con_mat.coeffRef(row_idx, this_state_idx) = 1.0;
-        linear_con_mat.coeffRef(row_idx, s_slack_var_idx) = -1.0;
+        triplets.emplace_back(row_idx, this_state_idx, 1.0);
+        triplets.emplace_back(row_idx, s_slack_var_idx, -1.0);
         upper_bound(row_idx) = 0;
         row_idx++;
       }
@@ -976,9 +968,9 @@ void TOP::SetSimpleConstraints() {
           num_force_norm_slack_vars+num_moment_norm_slack_vars+
           state_bd_dim*(N-1)+state_bd_dim*(N-1) +
           4*ii + jj;
-        linear_con_mat.coeffRef(row_idx, s_slack_var_idx) = 1.0;
+        triplets.emplace_back(row_idx, s_slack_var_idx, 1.0);
       }
-      linear_con_mat.coeffRef(row_idx, z_slack_var_idx) = -1.0;
+      triplets.emplace_back(row_idx, z_slack_var_idx, -1.0);
       upper_bound(row_idx) = desired_vel_;
       row_idx++;
     }
@@ -992,7 +984,7 @@ void TOP::SetSimpleConstraints() {
         state_bd_dim*(N-1)+state_bd_dim*(N-1)+
         4*(N-1)+ 4*ii + 3;
       // -z_k <=0
-      linear_con_mat.coeffRef(row_idx, z_slack_var_idx) = -1.0;
+      triplets.emplace_back(row_idx, z_slack_var_idx, -1.0);
       upper_bound(row_idx) = 0;
       row_idx++;
       for (size_t jj = 0; jj < ang_vel_dim; jj++) {
@@ -1002,17 +994,17 @@ void TOP::SetSimpleConstraints() {
           4*(N-1)+ 4*ii + jj;
         size_t this_state_idx = state_dim*(ii+1)+ 10 + jj;  // skip ii=0, skip position,linvel,quat states
         // -s_ik <= 0
-        linear_con_mat.coeffRef(row_idx, s_slack_var_idx) = -1.0;
+        triplets.emplace_back(row_idx, s_slack_var_idx, -1.0);
         upper_bound(row_idx) = 0;
         row_idx++;
         // -x_ik -s_ik <= 0
-        linear_con_mat.coeffRef(row_idx, this_state_idx) = -1.0;
-        linear_con_mat.coeffRef(row_idx, s_slack_var_idx) = -1.0;
+        triplets.emplace_back(row_idx, this_state_idx, -1.0);
+        triplets.emplace_back(row_idx, s_slack_var_idx, -1.0);
         upper_bound(row_idx) = 0;
         row_idx++;
         // x_ik -s_ik <= 0
-        linear_con_mat.coeffRef(row_idx, this_state_idx) = 1.0;
-        linear_con_mat.coeffRef(row_idx, s_slack_var_idx) = -1.0;
+        triplets.emplace_back(row_idx, this_state_idx, 1.0);
+        triplets.emplace_back(row_idx, s_slack_var_idx, -1.0);
         upper_bound(row_idx) = 0;
         row_idx++;
       }
@@ -1021,9 +1013,9 @@ void TOP::SetSimpleConstraints() {
         size_t s_slack_var_idx = state_dim*N+control_dim*(N-1)+
           num_force_norm_slack_vars+num_moment_norm_slack_vars+state_bd_dim*(N-1)+state_bd_dim*(N-1)+
           4*(N-1) + 4*ii + jj;
-        linear_con_mat.coeffRef(row_idx, s_slack_var_idx) = 1.0;
+        triplets.emplace_back(row_idx, s_slack_var_idx, 1.0);
       }
-      linear_con_mat.coeffRef(row_idx, z_slack_var_idx) = -1.0;
+      triplets.emplace_back(row_idx, z_slack_var_idx, -1.0);
       upper_bound(row_idx) = desired_vel_;
       row_idx++;
     }
@@ -1092,7 +1084,7 @@ void TOP::SetSimpleConstraints() {
           // std::to_string(lb) << ", " << std::to_string(ub) << "." << std::endl;
         }
         // lb < x < ub
-        linear_con_mat.coeffRef(row_idx, state_dim*ii + jj) = 1.0;
+        triplets.emplace_back(row_idx, state_dim*ii + jj, 1.0);
         lower_bound(row_idx) = lb;
         upper_bound(row_idx) = ub;
         row_idx++;
@@ -1137,7 +1129,7 @@ void TOP::SetSimpleConstraints() {
   if (enforce_state_bounds) {
     for (size_t ii = 0; ii < N; ii++) {
       for (size_t jj = 0; jj < 3; jj++) {  // x, y, z only for now
-        linear_con_mat.coeffRef(row_idx, ii * state_dim + jj) = 1.0;
+        triplets.emplace_back(row_idx, state_dim*ii + jj, 1.0);
         lower_bound(row_idx) = MinPos()[jj];
         upper_bound(row_idx) = MaxPos()[jj];
         // std::cout << "Setting state bounds for state " << ii << " dim " << jj << " to " << MinPos()[jj] << " and "
@@ -1146,6 +1138,9 @@ void TOP::SetSimpleConstraints() {
       }
     }
   }
+
+  // Update linear_con_mat all at once with triplets
+  linear_con_mat.setFromTriplets(triplets.begin(), triplets.end());
 
   size_t num_vars = GetNumTOPVariables();
   size_t num_cons = GetNumTOPConstraints();
