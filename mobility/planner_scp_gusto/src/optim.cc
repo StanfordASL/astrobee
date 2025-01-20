@@ -321,12 +321,12 @@ void TOP::UpdateProblemDimension(size_t N_) {
   SetSimpleCosts();
 
   // Set up solver
-  abs_tol_ = 1e-4;  // default 1e-03
-  rel_tol_ = 1e-4;  // default 1e-03
-  primal_tol_ = 1e-6;  // default 1e-04
-  dual_tol_ = 1e-6;  // default 1e-04
-  rho_ = 1.0;  // default 0.1
-  sigma_ = 1e-6;  // default 1e-06
+  abs_tol_ = 1e-5;  // default 1e-03
+  rel_tol_ = 1e-5;  // default 1e-03
+  primal_tol_ = 1e-8;  // default 1e-04
+  dual_tol_ = 1e-8;  // default 1e-04
+  rho_ = 0.3;  // default 0.1
+  sigma_ = 1e-8;  // default 1e-06
   // max_iter_solver_ = 200;  // default 4000
   max_iter_solver_ = 4000;  // default 4000
   verbose_ = true;  // TODO(somrita): Change back to false
@@ -3099,7 +3099,7 @@ int main() {
   bool test_granite_large_obs = false;
   bool test_granite_small_obs = false;
   bool test_iss_no_obs = true;
-  bool test_iss_small_obs = false;
+  bool test_iss_small_obs = true;
   bool test_iss_large_obs = false;
 
   bool test_debug_obs_avoidance = false;
