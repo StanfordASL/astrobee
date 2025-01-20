@@ -87,7 +87,7 @@ TOP::TOP(decimal_t Tf_, int N_)
   enforce_ang_vel_norm = false;
   enforce_trust_region_const = false;
   enforce_obs_avoidance_const = false;
-  enforce_state_bounds = false;
+  enforce_state_bounds = true;
 
   penalize_total_force = false;
   penalize_total_moment = false;
@@ -321,12 +321,12 @@ void TOP::UpdateProblemDimension(size_t N_) {
   SetSimpleCosts();
 
   // Set up solver
-  abs_tol_ = 1e-5;  // default 1e-03
-  rel_tol_ = 1e-5;  // default 1e-03
-  primal_tol_ = 1e-8;  // default 1e-04
-  dual_tol_ = 1e-8;  // default 1e-04
-  rho_ = 0.3;  // default 0.1
-  sigma_ = 1e-8;  // default 1e-06
+  abs_tol_ = 1e-4;  // default 1e-03
+  rel_tol_ = 1e-4;  // default 1e-03
+  primal_tol_ = 1e-6;  // default 1e-04
+  dual_tol_ = 1e-6;  // default 1e-04
+  rho_ = 1.0;  // default 0.1
+  sigma_ = 1e-6;  // default 1e-06
   // max_iter_solver_ = 200;  // default 4000
   max_iter_solver_ = 4000;  // default 4000
   verbose_ = true;  // TODO(somrita): Change back to false
@@ -342,6 +342,9 @@ void TOP::UpdateProblemDimension(size_t N_) {
   solver->settings()->setRho(rho_);
   solver->settings()->setSigma(sigma_);
   solver->settings()->setMaxIteraction(max_iter_solver_);
+  solver->settings()->setScaling(1);  // Enable scaling
+  solver->settings()->setPolish(true);          // Enable solution polishing
+
 
 
   solver->settings()->setVerbosity(verbose_);
@@ -633,6 +636,21 @@ void TOP::SetSimpleConstraints() {
 
   auto start_time = std::chrono::high_resolution_clock::now();
 
+  if (enforce_state_bounds) {
+    for (size_t ii = 0; ii < N; ii++) {
+      for (size_t jj = 0; jj < 3; jj++) {  // x, y, z only for now
+        triplets.emplace_back(row_idx, state_dim*ii + jj, 1.0);
+        lower_bound(row_idx) = -20.0;
+        upper_bound(row_idx) = 20.0;
+        // lower_bound(row_idx) = MinPos()[jj];
+        // upper_bound(row_idx) = MaxPos()[jj];
+        // std::cout << "Setting state bounds for state " << ii << " dim " << jj << " to " << MinPos()[jj] << " and "
+        //           << MaxPos()[jj] << std::endl;
+        ++row_idx;
+      }
+    }
+  }
+
   // Initial state
   if (enforce_init_cond) {
     for (size_t ii = 0; ii < state_dim; ii++) {
@@ -651,11 +669,6 @@ void TOP::SetSimpleConstraints() {
       upper_bound(row_idx) = xg(ii);
       row_idx++;
     }
-  }
-
-  if (row_idx != 2*state_dim) {
-    std::cerr << "Error: Expected " << 2 * state_dim << " constraints, but added " << row_idx << " constraints."
-              << std::endl;
   }
 
   if (enforce_lin_dynamics) {
@@ -1134,18 +1147,7 @@ void TOP::SetSimpleConstraints() {
     // }
   }
 
-  if (enforce_state_bounds) {
-    for (size_t ii = 0; ii < N; ii++) {
-      for (size_t jj = 0; jj < 3; jj++) {  // x, y, z only for now
-        triplets.emplace_back(row_idx, state_dim*ii + jj, 1.0);
-        lower_bound(row_idx) = MinPos()[jj];
-        upper_bound(row_idx) = MaxPos()[jj];
-        // std::cout << "Setting state bounds for state " << ii << " dim " << jj << " to " << MinPos()[jj] << " and "
-        //           << MaxPos()[jj] << std::endl;
-        ++row_idx;
-      }
-    }
-  }
+
 
   // Update linear_con_mat all at once with triplets
   linear_con_mat.setFromTriplets(triplets.begin(), triplets.end());
@@ -2526,15 +2528,17 @@ void TOP::PolishSolution() {
 
 */
 
-void TOP::WriteTrajectoryToFile(const std::string& fname) {
+void TOP::WriteTrajectoryToFile(const std::string& fname, bool include_timestamp) {
   CreateDirectoryIfNotExists(output_dir);
   std::string full_fname;
   if (nn_training_mode) {
     CreateDirectoryIfNotExists(output_dir + "/nn_training");
     full_fname = output_dir + "/nn_training/" + fname + ".txt";
-  } else {
+  } else if (include_timestamp) {
     std::string timestamp = getCurrentTimestamp();
     full_fname = output_dir + "/" + fname + "_" + timestamp + ".txt";
+  } else {
+    full_fname = output_dir + "/" + fname + ".txt";
   }
   std::ofstream file(full_fname);
   char full_path[PATH_MAX];
@@ -2933,25 +2937,25 @@ std::tuple<scp::Vec13Vec, scp::Vec13Vec> initializeMotionCases(bool is_granite, 
     // All x0s are the same
     x0 << 10.28, -9.81, 4.30, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
 
-    // Case 1: Motion in Y
-    xg << 10.28, -8.81, 4.30, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
-    xgs.push_back(xg);
-    // Case 2: Rotation in place
-    // (angle-axis) (1.57 0 0 1) --> Quat x y z w (0 0 0.7068252 0.7073883)
-    xg << 10.28, -9.81, 4.30, 0, 0, 0, 0, 0, 0.7068252, 0.7073883, 0, 0, 0;
-    xgs.push_back(xg);
-    // Case 3: Translation in 3 axes
-    xg << 11.00, -8.81, 5.30, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
-    xgs.push_back(xg);
-    // Case 4: Translation + rotation
-    xg << 10.28, -8.81, 4.30, 0, 0, 0, 0, 0, 0.7068252, 0.7073883, 0, 0, 0;
-    xgs.push_back(xg);
-    // Case 5: Translation in 2 axes + rotation
-    xg << 11.00, -8.81, 4.30, 0, 0, 0, 0, 0, 0.7068252, 0.7073883, 0, 0, 0;
-    xgs.push_back(xg);
-    // Case 6: Translation in 3 axes + rotation
-    xg << 11.00, -8.81, 5.30, 0, 0, 0, 0, 0, 0.7068252, 0.7073883, 0, 0, 0;
-    xgs.push_back(xg);
+    // // Case 1: Motion in Y
+    // xg << 10.28, -8.81, 4.30, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+    // xgs.push_back(xg);
+    // // Case 2: Rotation in place
+    // // (angle-axis) (1.57 0 0 1) --> Quat x y z w (0 0 0.7068252 0.7073883)
+    // xg << 10.28, -9.81, 4.30, 0, 0, 0, 0, 0, 0.7068252, 0.7073883, 0, 0, 0;
+    // xgs.push_back(xg);
+    // // Case 3: Translation in 3 axes
+    // xg << 11.00, -8.81, 5.30, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+    // xgs.push_back(xg);
+    // // Case 4: Translation + rotation
+    // xg << 10.28, -8.81, 4.30, 0, 0, 0, 0, 0, 0.7068252, 0.7073883, 0, 0, 0;
+    // xgs.push_back(xg);
+    // // Case 5: Translation in 2 axes + rotation
+    // xg << 11.00, -8.81, 4.30, 0, 0, 0, 0, 0, 0.7068252, 0.7073883, 0, 0, 0;
+    // xgs.push_back(xg);
+    // // Case 6: Translation in 3 axes + rotation
+    // xg << 11.00, -8.81, 5.30, 0, 0, 0, 0, 0, 0.7068252, 0.7073883, 0, 0, 0;
+    // xgs.push_back(xg);
     // Case 7: Motion in YZ
     xg << 10.28, -8.81, 5.30, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
     xgs.push_back(xg);
@@ -2971,6 +2975,8 @@ void processProblemInstance(scp::TOP& top_eg, const scp::Vec13& x0, const scp::V
   top_eg.xg = xg;
   clearToZeros(top_eg.Xprev);
   clearToZeros(top_eg.Uprev);
+  top_eg.save_constraints_to_file = false;
+  top_eg.save_trajectory_to_file = false;
 
   if (top_eg.is_granite) {
     if (vbox.isEmpty()) {
@@ -2989,11 +2995,13 @@ void processProblemInstance(scp::TOP& top_eg, const scp::Vec13& x0, const scp::V
   if (!top_eg.Solve()) {
     std::cout << "Failure: Problem " << problemIndex << " could not be solved!" << std::endl;
     std::cout << "--------------------------------------------" << std::endl;
+    top_eg.WriteTrajectoryToFile("output_" + std::to_string(problemIndex), /*include_timestamp=*/ false);
     return;
   }
 
   std::cout << "Success: Problem " << problemIndex << " solved!" << std::endl;
   std::cout << "--------------------------------------------" << std::endl;
+  top_eg.WriteTrajectoryToFile("output_" + std::to_string(problemIndex), /*include_timestamp=*/ false);
   return;
 }
 
@@ -3089,9 +3097,9 @@ int main() {
   bool test_granite_no_obs = false;
   bool test_granite_large_obs = false;
   bool test_granite_small_obs = false;
-  bool test_iss_no_obs = false;
-  bool test_iss_small_obs = false;
-  bool test_iss_large_obs = false;
+  bool test_iss_no_obs = true;
+  bool test_iss_small_obs = true;
+  bool test_iss_large_obs = true;
 
   bool test_debug_obs_avoidance = false;
 
@@ -3099,6 +3107,8 @@ int main() {
   bool train_and_save_model = false;
   bool load_and_run_inference = false;
   bool test_warm_start = false;
+
+  bool test_state_bound_constraints = false;
 
   int num_problems = 0;
 
@@ -3152,10 +3162,11 @@ int main() {
   num_problems = 0;  // Reset problem counter for ISS cases
 
   if (test_iss_no_obs || test_iss_small_obs) {
-    scp::TOP top_eg(20., 801);
+    scp::TOP top_eg(10., 201);
     // Set ISS environment
     top_eg.is_granite = false;
     top_eg.enforce_obs_avoidance_const = false;
+    top_eg.enforce_state_bounds = true;
 
     // // Set (rough) ISS bounds
     // top_eg.x_min(0) = -100.0;
@@ -3183,8 +3194,12 @@ int main() {
       // smallObstacle.extend(Eigen::Vector3d(1500.0, -8.0, 4.8));
       // smallObstacle.extend(Eigen::Vector3d(10.0, -9.2, 4.6));
       // smallObstacle.extend(Eigen::Vector3d(10.6, -9.0, 4.7));
-      smallObstacle.extend(Eigen::Vector3d(10.0, -9.2, 100.0));
-      smallObstacle.extend(Eigen::Vector3d(10.6, -9.0, 200.0));
+      // smallObstacle.extend(Eigen::Vector3d(10.0, -9.2, 100.0));
+      // smallObstacle.extend(Eigen::Vector3d(10.6, -9.0, 200.0));
+      // smallObstacle.extend(Eigen::Vector3d(10.0, -9.3, 4.0));
+      // smallObstacle.extend(Eigen::Vector3d(10.6, -8.8, 4.8));
+      smallObstacle.extend(Eigen::Vector3d(10.2, -9.3, 4.0));
+      smallObstacle.extend(Eigen::Vector3d(10.3, -8.8, 4.8));
       top_eg.enforce_obs_avoidance_const = true;
       for (size_t i = 0; i < xgs.size(); ++i) {
         num_problems++;
@@ -3377,22 +3392,56 @@ int main() {
     std::cout << "--------------------------------------------" << std::endl;
   }
 
-  scp::TOP* top;
-  top = new scp::TOP(20., 801);
-  for (int ii = 0; ii < 100; ii++) {
-    top->nn_model_path = "/home/enceladus/astrobee/src/saved_NN_models/trained_model_27_2025-01-03_00-34-39.pt";
-    top->use_nn_warm_start = true;
-    top->is_granite = false;
-    top->x0 << 9.5, -9.8, 4.3, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
-    top->xg << 9.5, -6.8, 4.3, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+  if (test_state_bound_constraints) {
+    scp::TOP top(10., 201);
+    top.is_granite = false;
+    top.enforce_obs_avoidance_const = false;
+    top.nn_training_mode = false;
+    top.enforce_state_bounds = true;
 
-    if (!top->Solve()) {
-      std::cout << "Warm start: " << ii << " Problem could not be solved!" << std::endl;
+    scp::TOP top2(10., 201);
+    top2.is_granite = false;
+    top2.enforce_obs_avoidance_const = false;
+    top2.nn_training_mode = false;
+    top2.enforce_state_bounds = false;
+
+    // Initialize motion
+    top.x0 << 9.5, -9.8, 4.3, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+    top.xg << 9.5, -6.8, 4.3, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+    top2.x0 << 9.5, -9.8, 4.3, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+    top2.xg << 9.5, -6.8, 4.3, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+
+    if (!top.Solve()) {
+      std::cout << "With state bounds: problem could not be solved!" << std::endl;
     } else {
-      std::cout << "Warm start: " << ii << " Problem solved!" << std::endl;
+      std::cout << "With state bounds: problem solved!" << std::endl;
+    }
+    std::cout << "--------------------------------------------" << std::endl;
+
+    if (!top2.Solve()) {
+      std::cout << "Without state bounds: problem could not be solved!" << std::endl;
+    } else {
+      std::cout << "Without state bounds: problem solved!" << std::endl;
     }
     std::cout << "--------------------------------------------" << std::endl;
   }
+
+  // scp::TOP* top;
+  // top = new scp::TOP(20., 801);
+  // for (int ii = 0; ii < 100; ii++) {
+  //   top->nn_model_path = "/home/enceladus/astrobee/src/saved_NN_models/trained_model_27_2025-01-03_00-34-39.pt";
+  //   top->use_nn_warm_start = true;
+  //   top->is_granite = false;
+  //   top->x0 << 9.5, -9.8, 4.3, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+  //   top->xg << 9.5, -6.8, 4.3, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+
+  //   if (!top->Solve()) {
+  //     std::cout << "Warm start: " << ii << " Problem could not be solved!" << std::endl;
+  //   } else {
+  //     std::cout << "Warm start: " << ii << " Problem solved!" << std::endl;
+  //   }
+  //   std::cout << "--------------------------------------------" << std::endl;
+  // }
 
   // scp::TOP* top;
   // top = new scp::TOP(20., 801);

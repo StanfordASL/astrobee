@@ -277,7 +277,7 @@ class TOP {
   void PolishSolution();
   void ValidationChecks();
   void NormalizeQuaternions();
-  void WriteTrajectoryToFile(const std::string& fname);
+  void WriteTrajectoryToFile(const std::string& fname, bool include_timestamp = true);
 
   // Neural network for warm start
   bool use_nn_warm_start;
