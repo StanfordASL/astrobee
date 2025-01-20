@@ -63,8 +63,15 @@ TOP::TOP(decimal_t Tf_, int N_)
   // OR Load weights from file
   // net.loadWeights("path/to/net_weights.pt");
 
+  // Mode to create training data
+  nn_training_mode = false;
+
   // Folder to save outputs
   output_dir = "planner_scp_gusto_outputs";
+
+  // Whether to print constraints to file and save traj to file
+  save_constraints_to_file = true;
+  save_trajectory_to_file = true;
 
   // TODO(somrita): Implement all of these
   is_granite = false;
@@ -390,10 +397,10 @@ void TOP::InitTrajStraightline() {
       Uprev[ii](jj) = 0;
     }
   }
-  std::string timestamp = getCurrentTimestamp();
-  std::string fname = output_dir + "/" + std::string(is_granite ? "granite" : "iss") +
-                      "_initial_straight_line_trajectory" + "_" + timestamp + ".txt";
-  WriteTrajectoryToFile(Xprev, Uprev, fname);
+  if (save_trajectory_to_file) {
+    std::string fname = std::string(is_granite ? "granite" : "iss") +"_initial_straight_line_trajectory";
+    WriteTrajectoryToFile(fname);
+  }
 }
 
 void TOP::InitTrajWarmStart() {
@@ -437,10 +444,10 @@ void TOP::InitTrajWarmStart() {
     }
     Xprev = X_inter;
   }
-  std::string timestamp = getCurrentTimestamp();
-  std::string fname = output_dir + "/" + std::string(is_granite ? "granite" : "iss") +
-                      "_initial_nn_warm_start_trajectory" + "_" + timestamp + ".txt";
-  WriteTrajectoryToFile(Xprev, Uprev, fname);
+  if (save_trajectory_to_file) {
+    std::string fname = std::string(is_granite ? "granite" : "iss") +"_initial_nn_warm_start_trajectory";
+    WriteTrajectoryToFile(fname);
+  }
   return;
 }
 
@@ -1174,7 +1181,9 @@ void TOP::SetSimpleConstraints() {
   auto end_time = std::chrono::high_resolution_clock::now();
   auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
   std::cout << "Finished setting simple constraints in : " << duration << " ms." << std::endl;
-  PrettyPrintConstraints();
+  if (save_constraints_to_file) {
+    PrettyPrintConstraints();
+  }
 }
 
 void TOP::PrettyPrintConstraints() {
@@ -1462,39 +1471,11 @@ bool TOP::Solve() {
 
     ValidationChecks();
 
-    bool printEveryIter = false;
-    if (printEveryIter) {
-      // Print statements
-      for (size_t jj = 0; jj < N-1; jj++) {
-        std::cout << "Quaternion and angular velocity at time " << jj << std::endl;
-        for (size_t kk = state_dim_lin; kk < state_dim ; kk++) {
-          std::cout << Xprev[jj](kk) << " ";
-        }
-        std::cout << std::endl;
-        std::cout << "Control variables at time " << jj << std::endl;
-        for (size_t kk = 0; kk < control_dim; kk++) {
-          // if (kk >=3 && Uprev[jj](kk) != 0){
-          //   std::cout << "Non-zero moment" << Uprev[jj](kk) << " " ;
-          // }
-          std::cout << Uprev[jj](kk) << " ";
-        }
-        std::cout << std::endl;
-        std::cout << "Same thing another way " << jj << std::endl;
-        for (size_t kk = 0; kk < control_dim; kk++) {
-          std::cout << qp_soln(state_dim*N + control_dim*jj + kk) << " ";
-        }
-        std::cout << std::endl;
-        // std::cout << "Slack control variables at time " << jj << std::endl;
-        // for (size_t kk = 0; kk < control_dim; kk++){
-        //   std::cout << qp_soln(state_dim*N + control_dim*(N-1) + control_dim*jj + kk) << " " ;
-        // }
-        std::cout << std::endl;
-      }
-      std::cout << std::endl;
+    if (save_trajectory_to_file) {
+      std::string fname = std::string((is_granite) ? "granite" : "iss") + "_optim_trajectory";
+      WriteTrajectoryToFile(fname);
     }
-    // if (solved_ && state_ineq_con_satisfied) {
-    //   return true;
-    // }
+
     if (solved_) {
       return true;
     }
@@ -2545,49 +2526,31 @@ void TOP::PolishSolution() {
 
 */
 
-void TOP::WriteTrajectoryToFile(const Vec13Vec& states, const Vec6Vec& controls, const std::string& filename) {
+void TOP::WriteTrajectoryToFile(const std::string& fname) {
   CreateDirectoryIfNotExists(output_dir);
-  std::ofstream traj_file(filename);
-  if (!traj_file.is_open()) {
-    std::cerr << "Failed to open trajectory file " << filename << "for writing." << std::endl;
-    return;
+  std::string full_fname;
+  if (nn_training_mode) {
+    CreateDirectoryIfNotExists(output_dir + "/nn_training");
+    full_fname = output_dir + "/nn_training/" + fname + ".txt";
   } else {
-    std::cout << "[TOP::WriteTrajectoryToFile] Writing trajectory to: " << filename << std::endl;
+    std::string timestamp = getCurrentTimestamp();
+    full_fname = output_dir + "/" + fname + "_" + timestamp + ".txt";
   }
+  std::ofstream file(full_fname);
   char full_path[PATH_MAX];
-  if (realpath(filename.c_str(), full_path)) {
-    std::cout << "Full path: " << full_path << std::endl;
-  } else {
-    std::cerr << "Error resolving path: " << filename << " " << strerror(errno) << std::endl;
-    throw std::runtime_error("Error resolving path: " + filename + " " + std::string(strerror(errno)));
-  }
-  for (size_t i = 0; i < states.size(); ++i) {
-    traj_file << states[i].transpose();
-    if (i < controls.size()) traj_file << " " << controls[i].transpose();
-    traj_file << std::endl;
-  }
-  traj_file.close();
-}
-
-void TOP::WriteTrajectoryToFileForNN(const Vec13& x0, const Vec13& xg, int N, const Vec13Vec& Xsoln,
-                                     const Vec6Vec& Usoln,
-                                     const std::string& fname) {
-  CreateDirectoryIfNotExists(output_dir);
-  std::ofstream file(fname);
   if (!file.is_open()) {
-    std::cerr << "Error: Unable to open file " << fname << " for writing." << std::endl;
-    throw std::runtime_error("Error: Unable to open file " + fname + " for writing.");
+    std::cerr << "Error: Unable to open file " << full_fname << " for writing trajectory." << std::endl;
     return;
-  } else {
-    std::cout << "Writing trajectory to: " << fname << std::endl;
   }
-  char full_path[PATH_MAX];
-  if (realpath(fname.c_str(), full_path)) {
-    std::cout << "Full path: " << full_path << std::endl;
-  } else {
-    std::cerr << "Error resolving path: " << strerror(errno) << std::endl;
-    throw std::runtime_error("Error resolving path: " + std::string(strerror(errno)));
+  if (!(realpath(full_fname.c_str(), full_path))) {
+    std::cerr << "Error resolving path: " << full_fname << " " << strerror(errno) << std::endl;
+    return;
   }
+  std::cout << "[TOP::WriteTrajectoryToFile] Writing trajectory to: " << full_fname << std::endl;
+  std::cout << "Full path: " << full_path << std::endl;
+
+  // Solved status
+  file << "Solved: " << solved_ << std::endl;
 
   // Write the initial state (x0) and goal state (xg), each of length 13
   for (int i = 0; i < 13; ++i) {
@@ -2606,7 +2569,7 @@ void TOP::WriteTrajectoryToFileForNN(const Vec13& x0, const Vec13& xg, int N, co
   // Write the Xprev data (N lines of length 13)
   for (int i = 0; i < N; ++i) {
     for (int j = 0; j < 13; ++j) {
-      file << Xsoln[i][j] << " ";
+      file << Xprev[i][j] << " ";
     }
     file << std::endl;
   }
@@ -2614,15 +2577,14 @@ void TOP::WriteTrajectoryToFileForNN(const Vec13& x0, const Vec13& xg, int N, co
   // Write the Uprev data (N-1 lines of length 6)
   for (int i = 0; i < N - 1; ++i) {
     for (int j = 0; j < 6; ++j) {
-      file << Usoln[i][j] << " ";
+      file << Uprev[i][j] << " ";
     }
     file << std::endl;
   }
 
   // Close the file stream
   file.close();
-
-  std::cout << "Trajectory data for training written to '" << fname << "'" << std::endl;
+  std::cout << "Trajectory data writing complete." << std::endl;
 }
 
 Vec13 TOP::ForwardDynamics(Vec13 x, Vec6 u) {
@@ -2848,7 +2810,7 @@ void clearToZeros(std::vector<VecType, Eigen::aligned_allocator<VecType>>& vec) 
 }
 
 // Function to initialize motion cases
-std::tuple<scp::Vec13Vec, scp::Vec13Vec> initializeMotionCases(bool is_granite, bool saveForNNTraining = false) {
+std::tuple<scp::Vec13Vec, scp::Vec13Vec> initializeMotionCases(bool is_granite, bool nn_training_mode = false) {
   scp::Vec13Vec x0s;
   scp::Vec13Vec xgs;
 
@@ -2857,7 +2819,7 @@ std::tuple<scp::Vec13Vec, scp::Vec13Vec> initializeMotionCases(bool is_granite, 
 
   bool single_x0 = false;  // true --> single x0, multiple xg. false --> multiple x0, multiple xg.
 
-  if (saveForNNTraining) {
+  if (nn_training_mode) {
     if (is_granite) {
       throw std::runtime_error("Granite case not supported for NN training.");
       return std::make_tuple(x0s, xgs);
@@ -3004,7 +2966,7 @@ std::tuple<scp::Vec13Vec, scp::Vec13Vec> initializeMotionCases(bool is_granite, 
 
 // Function to process a single problem instance
 void processProblemInstance(scp::TOP& top_eg, const scp::Vec13& x0, const scp::Vec13& xg,
-                            const Eigen::AlignedBox3d& vbox, int problemIndex, bool saveForNNTraining = false) {
+                            const Eigen::AlignedBox3d& vbox, int problemIndex) {
   top_eg.x0 = x0;
   top_eg.xg = xg;
   clearToZeros(top_eg.Xprev);
@@ -3023,43 +2985,14 @@ void processProblemInstance(scp::TOP& top_eg, const scp::Vec13& x0, const scp::V
     top_eg.keep_out_zones_.push_back(vbox);
     std::cout << "After adding 1, Number of obstacles: " << top_eg.keep_out_zones_.size() << std::endl;
   }
-  std::string timestamp = top_eg.getCurrentTimestamp();
-  std::string fname = top_eg.output_dir + std::string((saveForNNTraining) ? "/for_NN_training/" : "/") +
-                      std::string((top_eg.is_granite) ? "granite" : "iss") + "_optim_trajectory_" +
-                      std::to_string(problemIndex) + std::string((saveForNNTraining) ? "" : ("_" + timestamp)) + ".txt";
 
   if (!top_eg.Solve()) {
-    if (saveForNNTraining) {
-      std::cout << "Failure: Problem " << problemIndex << " could not be solved!" << std::endl;
-      return;
-    } else {
-      scp::Vec13Vec empty_Xprev;
-      scp::Vec6Vec empty_Uprev;
-      top_eg.WriteTrajectoryToFile(empty_Xprev, empty_Uprev, fname);
-      std::cout << "Failure: Problem " << problemIndex << " could not be solved!" << std::endl;
-      std::cout << "Empty trajectory written to file: " << fname << std::endl;
-      std::cout << "--------------------------------------------" << std::endl;
-      return;
-    }
+    std::cout << "Failure: Problem " << problemIndex << " could not be solved!" << std::endl;
+    std::cout << "--------------------------------------------" << std::endl;
+    return;
   }
 
   std::cout << "Success: Problem " << problemIndex << " solved!" << std::endl;
-
-  Eigen::VectorXd solution = top_eg.solver->getSolution();
-  for (size_t ii = 0; ii < top_eg.N; ii++) {
-      top_eg.Xprev[ii] = solution.segment(top_eg.state_dim * ii, top_eg.state_dim);
-  }
-  for (size_t ii = 0; ii < top_eg.N - 1; ii++) {
-      top_eg.Uprev[ii] = solution.segment(top_eg.state_dim * top_eg.N + top_eg.control_dim * ii, top_eg.control_dim);
-  }
-
-  if (saveForNNTraining) {
-    top_eg.WriteTrajectoryToFileForNN(top_eg.x0, top_eg.xg, top_eg.N, top_eg.Xprev, top_eg.Uprev, fname);
-  } else {
-    top_eg.WriteTrajectoryToFile(top_eg.Xprev, top_eg.Uprev, fname);
-  }
-
-  std::cout << "Trajectory written to file: " << fname << std::endl;
   std::cout << "--------------------------------------------" << std::endl;
   return;
 }
@@ -3276,19 +3209,19 @@ int main() {
   }
 
   if (create_training_data) {
-    bool saveForNNTraining = true;
     scp::TOP top(20., 801);
     top.is_granite = false;
     top.enforce_obs_avoidance_const = false;
+    top.nn_training_mode = true;
 
     // Initialize motion cases
     scp::Vec13Vec x0s, xgs;
-    std::tie(x0s, xgs) = initializeMotionCases(top.is_granite, saveForNNTraining);
+    std::tie(x0s, xgs) = initializeMotionCases(top.is_granite, /* nn_training_mode= */ top.nn_training_mode);
 
     // Process problems
     for (size_t i = 0; i < xgs.size(); ++i) {
       num_problems++;
-      processProblemInstance(top, x0s[i], xgs[i], Eigen::AlignedBox3d(), num_problems, saveForNNTraining);
+      processProblemInstance(top, x0s[i], xgs[i], Eigen::AlignedBox3d(), num_problems);
     }
   }
 

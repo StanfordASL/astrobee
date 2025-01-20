@@ -73,6 +73,8 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
   bool is_granite_;
   bool use_nn_warm_start_;
   std::string nn_model_path_;
+  bool save_constraints_to_file_;
+  bool save_trajectory_to_file_;
   bool use_2d;            // true for granite table
   std::string flight_mode_;
   ros::NodeHandle *nh_;
@@ -100,11 +102,15 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
     is_granite_ = cfg_.Get<bool>("is_granite");
     use_nn_warm_start_ = cfg_.Get<bool>("use_nn_warm_start");
     nn_model_path_ = cfg_.Get<std::string>("nn_model_path");
+    save_constraints_to_file_ = cfg_.Get<bool>("save_constraints_to_file");
+    save_trajectory_to_file_ = cfg_.Get<bool>("save_trajectory_to_file");
     // Set config values to TOP for solve
     top->enforce_obs_avoidance_const = enforce_obs_avoidance_const_;
     top->is_granite = is_granite_;
     top->use_nn_warm_start = use_nn_warm_start_;
     top->nn_model_path = nn_model_path_;
+    top->save_constraints_to_file = save_constraints_to_file_;
+    top->save_trajectory_to_file = save_trajectory_to_file_;
     top->Solve();
       // Notify initialization complete
     NODELET_DEBUG_STREAM("Initialization complete");
@@ -124,6 +130,8 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
     is_granite_ = cfg_.Get<bool>("is_granite");
     use_nn_warm_start_ = cfg_.Get<bool>("use_nn_warm_start");
     nn_model_path_ = cfg_.Get<std::string>("nn_model_path");
+    save_constraints_to_file_ = cfg_.Get<bool>("save_constraints_to_file");
+    save_trajectory_to_file_ = cfg_.Get<bool>("save_trajectory_to_file");
     return true;
   }
 
@@ -225,6 +233,8 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
     }
     top->use_nn_warm_start = use_nn_warm_start_;
     top->nn_model_path = nn_model_path_;
+    top->save_constraints_to_file = save_constraints_to_file_;
+    top->save_trajectory_to_file = save_trajectory_to_file_;
     std::cout << "PlannerSCPGusto: Called TOP with settings: " << std::endl;
     std::cout << "enforce_obs_avoidance_const: " << top->enforce_obs_avoidance_const << std::endl;
     std::cout << "is_granite: " << top->is_granite << std::endl;

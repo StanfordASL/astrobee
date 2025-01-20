@@ -277,9 +277,7 @@ class TOP {
   void PolishSolution();
   void ValidationChecks();
   void NormalizeQuaternions();
-  void WriteTrajectoryToFile(const Vec13Vec& states, const Vec6Vec& controls, const std::string& filename);
-  void WriteTrajectoryToFileForNN(const Vec13& x0, const Vec13& xg, int N, const Vec13Vec& Xsoln, const Vec6Vec& Usoln,
-                                  const std::string& fname);
+  void WriteTrajectoryToFile(const std::string& fname);
 
   // Neural network for warm start
   bool use_nn_warm_start;
@@ -288,8 +286,15 @@ class TOP {
   torch::optim::Adam optimizer;
   void InitTrajWarmStart();
 
+  // Mode to create training data
+  bool nn_training_mode;
+
   // Outputs folder
   std::string output_dir;
+
+  // Whether to save constraints and trajectories to file
+  bool save_constraints_to_file;
+  bool save_trajectory_to_file;
 
   // Function to read a single dataset file
   std::tuple<torch::Tensor, torch::Tensor> ReadData(const std::string& filename);
