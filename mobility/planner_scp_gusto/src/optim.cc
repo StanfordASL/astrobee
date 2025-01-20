@@ -132,7 +132,7 @@ TOP::TOP(decimal_t Tf_, int N_)
   keep_in_zones_.clear();
   keep_out_zones_.clear();
 
-  x_max << 100.0, 100.0, 100.0,
+  x_max << 20.0, 20.0, 20.0,
     desired_vel_, desired_vel_, desired_vel_,
     1, 1, 1, 1,
     desired_omega_, desired_omega_, desired_omega_;
@@ -1047,16 +1047,17 @@ void TOP::SetSimpleConstraints() {
                 << std::endl;
       return;
     }
-    if (keep_out_zones_.size() > 1) {
-      std::cout << "[TOP::SetSimpleConstraints] Can only account for 1 keep out zone currently. Found "
-                << std::to_string(keep_out_zones_.size()) << std::endl;
-      // throw std::runtime_error("Can only account for 1 keep out zone currently. Found " +
-      //                          std::to_string(keep_out_zones_.size()));
-    }
+    // if (keep_out_zones_.size() > 1) {
+    //   std::cout << "[TOP::SetSimpleConstraints] Can only account for 1 keep out zone currently. Found "
+    //             << std::to_string(keep_out_zones_.size()) << std::endl;
+    //   // throw std::runtime_error("Can only account for 1 keep out zone currently. Found " +
+    //   //                          std::to_string(keep_out_zones_.size()));
+    // }
     // Eigen::AlignedBox3d box = keep_out_zones_[0];
     Eigen::AlignedBox3d box = keep_out_zones_.back();
     Eigen::Vector3d ko_min_original = box.min();
     Eigen::Vector3d ko_max_original = box.max();
+    std::cout << "[TOP::SetSimpleConstraints] Virtual Keepout for Obs Avoidance: " << std::endl;
     std::cout << "[TOP::SetSimpleConstraints] original ko_min: " << ko_min_original.transpose() << std::endl;
     std::cout << "[TOP::SetSimpleConstraints] original ko_max: " << ko_max_original.transpose() << std::endl;
     // Add buffer to obstacle

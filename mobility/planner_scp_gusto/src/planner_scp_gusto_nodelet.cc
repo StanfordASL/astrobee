@@ -218,7 +218,23 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
               inertia_msg.inertia.ixy, inertia_msg.inertia.iyy, inertia_msg.inertia.iyz,
               inertia_msg.inertia.ixz, inertia_msg.inertia.iyz, inertia_msg.inertia.izz;
     top->Jinv = top->J.inverse();
+
+    // pass keepin and keepout zones
     top->keep_in_zones_ = keep_in_zones_;
+    if (enforce_obs_avoidance_const_) {
+      // add custom virtual obstacle
+      if (is_granite_) {
+        Eigen::AlignedBox3d smallObstacle;
+        smallObstacle.extend(Eigen::Vector3d(-0.25, 0., -2));
+        smallObstacle.extend(Eigen::Vector3d(0., -0.25, 0));
+        keep_out_zones_.push_back(smallObstacle);
+      } else {
+        Eigen::AlignedBox3d smallObstacle;
+        smallObstacle.extend(Eigen::Vector3d(10.2, -9.3, 4.0));
+        smallObstacle.extend(Eigen::Vector3d(10.3, -8.8, 4.8));
+        keep_out_zones_.push_back(smallObstacle);
+      }
+    }
     top->keep_out_zones_ = keep_out_zones_;
 
     top->enforce_obs_avoidance_const = enforce_obs_avoidance_const_;
@@ -408,13 +424,6 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
         keep_out_zones_.push_back(temp);
         std::cout << "Keepin zone: " << zmin.transpose() << " " << zmax.transpose() << std::endl;
       }
-    }
-    bool add_custom_keep_out_zone = true;
-    if (add_custom_keep_out_zone) {
-      Eigen::AlignedBox3d smallObstacle;
-      smallObstacle.extend(Eigen::Vector3d(-0.25, 0., -2));
-      smallObstacle.extend(Eigen::Vector3d(0., -0.25, 0));
-      keep_out_zones_.push_back(smallObstacle);
     }
 
     std::cout << "# of keepin zones: " << keep_in_zones_.size() << std::endl;
