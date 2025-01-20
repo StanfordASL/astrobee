@@ -93,7 +93,7 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
       ros::Duration(ros::Rate(DEFAULT_DIAGNOSTICS_RATE)),
         &PlannerSCPGustoNodelet::DiagnosticsCallback, this, false, true);
     // Create a new optimization problem
-    top = new scp::TOP(20., 801);
+    top = new scp::TOP(10., 201);
     // Save node handle
     nh_ = nh;
     // Get config values
