@@ -93,7 +93,7 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
       ros::Duration(ros::Rate(DEFAULT_DIAGNOSTICS_RATE)),
         &PlannerSCPGustoNodelet::DiagnosticsCallback, this, false, true);
     // Create a new optimization problem
-    top = new scp::TOP(10., 201);
+    top = new scp::TOP(20., 401);
     // Save node handle
     nh_ = nh;
     // Get config values
@@ -282,7 +282,8 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
         // << " in " << duration.count()/1e6 << "s!");
 
     if (is_solved) {
-      sample_trajectory(&plan_result.segment);
+      sample_trajectory_with_interpolation(&plan_result.segment);
+      // sample_trajectory(&plan_result.segment);
       plan_result.response = RESPONSE::SUCCESS;
       NODELET_FATAL_STREAM("Returning plan");
       ROS_INFO_STREAM("SCP::Planner found solution!");
@@ -304,6 +305,128 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
  private:
   std::vector<Eigen::AlignedBox3d> keep_in_zones_;
   std::vector<Eigen::AlignedBox3d> keep_out_zones_;
+
+  void sample_trajectory_with_interpolation(std::vector<ff_msgs::ControlState>* controls) {
+    size_t N = top->N;
+    scp::decimal_t dh = top->dh;
+    size_t slowdown = 2;  // slow down by this multiplier
+
+    top->PolishSolution();  // ensure quaternions are normalized
+
+    scp::decimal_t mass = top->mass;
+    scp::Mat3 J = top->J;
+    scp::Mat3 Jinv = top->Jinv;
+
+    for (size_t ii = 0; ii < top->N - 1; ii++) {
+      // Extract initial and final states for interpolation
+      scp::Vec3 F1 = top->Uprev[ii].segment(0, 3);
+      scp::Vec3 M1 = top->Uprev[ii].segment(3, 3);
+      scp::Vec3 omega1 = top->Xprev[ii].segment(10, 3);
+      scp::Vec3 accel1 = 1 / mass * F1;
+      scp::Vec3 alpha1 = Jinv * (M1 - omega1.cross(J * omega1));
+
+      scp::Vec3 F2 = top->Uprev[ii + 1].segment(0, 3);
+      scp::Vec3 M2 = top->Uprev[ii + 1].segment(3, 3);
+      scp::Vec3 omega2 = top->Xprev[ii + 1].segment(10, 3);
+      scp::Vec3 accel2 = 1 / mass * F2;
+      scp::Vec3 alpha2 = Jinv * (M2 - omega2.cross(J * omega2));
+
+      scp::Vec3 position1 = top->Xprev[ii].segment(0, 3);
+      scp::Vec3 velocity1 = top->Xprev[ii].segment(3, 3);
+      scp::Vec3 position2 = top->Xprev[ii + 1].segment(0, 3);
+      scp::Vec3 velocity2 = top->Xprev[ii + 1].segment(3, 3);
+
+      Eigen::Quaterniond q1(top->Xprev[ii](9), top->Xprev[ii](6), top->Xprev[ii](7), top->Xprev[ii](8));
+      Eigen::Quaterniond q2(top->Xprev[ii + 1](9), top->Xprev[ii + 1](6), top->Xprev[ii + 1](7), top->Xprev[ii + 1](8));
+
+      for (size_t j = 0; j < slowdown; j++) {
+        ff_msgs::ControlState state;
+        scp::decimal_t t = static_cast<scp::decimal_t>(j) / slowdown;
+
+        state.when = ros::Time(dh * (ii + t) * slowdown);
+
+        // Linear interpolation for position and velocity
+        scp::Vec3 position = (1 - t) * position1 + t * position2;
+        scp::Vec3 velocity = (1 - t) * velocity1 + t * velocity2;
+
+        state.pose.position.x = position(0);
+        state.pose.position.y = position(1);
+        state.pose.position.z = position(2);
+
+        state.twist.linear.x = velocity(0);
+        state.twist.linear.y = velocity(1);
+        state.twist.linear.z = velocity(2);
+
+        // Linear interpolation for forces and accelerations
+        scp::Vec3 F = (1 - t) * F1 + t * F2;
+        scp::Vec3 accel = (1 - t) * accel1 + t * accel2;
+
+        state.accel.linear.x = accel(0);
+        state.accel.linear.y = accel(1);
+        state.accel.linear.z = accel(2);
+
+        // Spherical linear interpolation for orientation
+        Eigen::Quaterniond q = q1.slerp(t, q2);
+        state.pose.orientation.x = q.x();
+        state.pose.orientation.y = q.y();
+        state.pose.orientation.z = q.z();
+        state.pose.orientation.w = q.w();
+
+        // Linear interpolation for angular velocity and acceleration
+        scp::Vec3 omega = (1 - t) * omega1 + t * omega2;
+        scp::Vec3 alpha = (1 - t) * alpha1 + t * alpha2;
+
+        state.twist.angular.x = omega(0);
+        state.twist.angular.y = omega(1);
+        state.twist.angular.z = omega(2);
+
+        state.accel.angular.x = alpha(0);
+        state.accel.angular.y = alpha(1);
+        state.accel.angular.z = alpha(2);
+
+        controls->push_back(state);
+      }
+    }
+
+    // // Final state has 0 velocity and acceleration
+    // ff_msgs::ControlState state;
+    // state.when = ros::Time(dh*(N-1)*slowdown);
+    // state.pose.position.x = top->Xprev[N-1](0);
+    // state.pose.position.y = top->Xprev[N-1](1);
+    // state.pose.position.z = top->Xprev[N-1](2);
+    // state.pose.orientation.x = top->Xprev[N-1](6);
+    // state.pose.orientation.y = top->Xprev[N-1](7);
+    // state.pose.orientation.z = top->Xprev[N-1](8);
+    // state.pose.orientation.w = top->Xprev[N-1](9);
+    // controls->push_back(state);
+
+    // Final state has 0 velocity and acceleration
+    ff_msgs::ControlState state;
+    state.when = ros::Time(dh * (N - 1) * slowdown);
+    state.pose.position.x = top->Xprev[N-1](0);
+    state.pose.position.y = top->Xprev[N-1](1);
+    state.pose.position.z = top->Xprev[N-1](2);
+    state.pose.orientation.x = top->Xprev[N-1](6);
+    state.pose.orientation.y = top->Xprev[N-1](7);
+    state.pose.orientation.z = top->Xprev[N-1](8);
+    state.pose.orientation.w = top->Xprev[N-1](9);
+    state.twist.linear.x = 0;
+    state.twist.linear.y = 0;
+    state.twist.linear.z = 0;
+    state.twist.angular.x = 0;
+    state.twist.angular.y = 0;
+    state.twist.angular.z = 0;
+    state.accel.linear.x = 0;
+    state.accel.linear.y = 0;
+    state.accel.linear.z = 0;
+    state.accel.angular.x = 0;
+    state.accel.angular.y = 0;
+    state.accel.angular.z = 0;
+
+    controls->push_back(state);
+
+    NODELET_FATAL_STREAM("Done packing controls");
+  }
 
   void sample_trajectory(std::vector<ff_msgs::ControlState> *controls) {
     size_t N = top->N;
