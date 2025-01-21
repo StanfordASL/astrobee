@@ -258,6 +258,7 @@ void TOP::UpdateProblemDimension(size_t N_) {
   // Allocate matrices for variables and constraints
 
   N = N_;
+  dh = Tf / N;
 
   if (!solver) {
     // delete solver;
@@ -284,6 +285,7 @@ void TOP::UpdateProblemDimension(size_t N_) {
   size_t num_vars = GetNumTOPVariables();
   size_t num_cons = GetNumTOPConstraints();
 
+  std::cout << "[TOP::UpdateProblemDimension] N = " << N << std::endl;
   std::cout << "[TOP::UpdateProblemDimension] Num vars: " << num_vars << " Num cons: " << num_cons << std::endl;
 
   hessian.resize(num_vars, num_vars);
@@ -1388,7 +1390,6 @@ bool TOP::Solve() {
   std::cout << "[TOP::Solve] Updated problem dimension" << std::endl;
   std::cout << "[TOP::Solve] linear_con_mat size: " << linear_con_mat.rows() << " x " << linear_con_mat.cols()
             << std::endl;
-  bool add_custom_keep_out_zone = true;
 
   std::cout << "[TOP::Solve] start of init traj is " << Xprev[0].transpose() << std::endl;
   std::cout << "[TOP::Solve] end of init traj is " << Xprev[N-1].transpose() << std::endl;

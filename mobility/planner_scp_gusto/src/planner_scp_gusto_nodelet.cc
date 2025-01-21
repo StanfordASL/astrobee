@@ -79,8 +79,11 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
   std::string flight_mode_;
   ros::NodeHandle *nh_;
 
-  uint N;
+  uint N_;
+  double Tf_;
   scp::TOP* top;
+
+  uint slowdown_factor_;  // for interpolation
 
  protected:
   bool InitializePlanner(ros::NodeHandle *nh) {
@@ -92,8 +95,6 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
     timer_d_ = nh->createTimer(
       ros::Duration(ros::Rate(DEFAULT_DIAGNOSTICS_RATE)),
         &PlannerSCPGustoNodelet::DiagnosticsCallback, this, false, true);
-    // Create a new optimization problem
-    top = new scp::TOP(20., 401);
     // Save node handle
     nh_ = nh;
     // Get config values
@@ -104,6 +105,11 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
     nn_model_path_ = cfg_.Get<std::string>("nn_model_path");
     save_constraints_to_file_ = cfg_.Get<bool>("save_constraints_to_file");
     save_trajectory_to_file_ = cfg_.Get<bool>("save_trajectory_to_file");
+    N_ = cfg_.Get<int>("N");
+    Tf_ = cfg_.Get<double>("Tf");
+    slowdown_factor_ = cfg_.Get<int>("slowdown_factor");
+    // Create a new optimization problem
+    top = new scp::TOP(Tf_, N_);
     // Set config values to TOP for solve
     top->enforce_obs_avoidance_const = enforce_obs_avoidance_const_;
     top->is_granite = is_granite_;
@@ -111,6 +117,8 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
     top->nn_model_path = nn_model_path_;
     top->save_constraints_to_file = save_constraints_to_file_;
     top->save_trajectory_to_file = save_trajectory_to_file_;
+    top->N = N_;
+    top->Tf = Tf_;
     top->Solve();
       // Notify initialization complete
     NODELET_DEBUG_STREAM("Initialization complete");
@@ -132,6 +140,9 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
     nn_model_path_ = cfg_.Get<std::string>("nn_model_path");
     save_constraints_to_file_ = cfg_.Get<bool>("save_constraints_to_file");
     save_trajectory_to_file_ = cfg_.Get<bool>("save_trajectory_to_file");
+    N_ = cfg_.Get<int>("N");
+    Tf_ = cfg_.Get<double>("Tf");
+    slowdown_factor_ = cfg_.Get<int>("slowdown_factor");
     return true;
   }
 
@@ -251,6 +262,8 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
     top->nn_model_path = nn_model_path_;
     top->save_constraints_to_file = save_constraints_to_file_;
     top->save_trajectory_to_file = save_trajectory_to_file_;
+    top->N = N_;
+    top->Tf = Tf_;
     std::cout << "PlannerSCPGusto: Called TOP with settings: " << std::endl;
     std::cout << "enforce_obs_avoidance_const: " << top->enforce_obs_avoidance_const << std::endl;
     std::cout << "is_granite: " << top->is_granite << std::endl;
@@ -309,7 +322,7 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
   void sample_trajectory_with_interpolation(std::vector<ff_msgs::ControlState>* controls) {
     size_t N = top->N;
     scp::decimal_t dh = top->dh;
-    size_t slowdown = 1;  // slow down by this multiplier
+    size_t slowdown = slowdown_factor_;  // slow down by this multiplier
 
     top->PolishSolution();  // ensure quaternions are normalized
 
