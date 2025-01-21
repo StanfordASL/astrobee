@@ -309,7 +309,7 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
   void sample_trajectory_with_interpolation(std::vector<ff_msgs::ControlState>* controls) {
     size_t N = top->N;
     scp::decimal_t dh = top->dh;
-    size_t slowdown = 2;  // slow down by this multiplier
+    size_t slowdown = 1;  // slow down by this multiplier
 
     top->PolishSolution();  // ensure quaternions are normalized
 

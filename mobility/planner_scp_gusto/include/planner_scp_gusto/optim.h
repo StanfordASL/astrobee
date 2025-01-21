@@ -243,7 +243,7 @@ class TOP {
   void UpdateA(Mat7& A, Vec13& X, Vec6& U);
   void UpdateB(Mat7x3& B, Vec13& X, Vec6& U);
   void UpdateRotationalDynamics();
-  Mat4x3 CalculateQMat(const Vec4& quaternion);
+  Mat4x3 CalculateQMat(const Eigen::Quaterniond& quaternion);
 
   void SetHessianMatrix();
   void SetGradient();

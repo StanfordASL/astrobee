@@ -597,25 +597,48 @@ Vec3 TOP::ComputeSignedDistanceGradient(const Vec3& point) {
 }
 
 // Function to calculate Q_mat
-Mat4x3 TOP::CalculateQMat(const Vec4& quaternion) {
-    // Extract quaternion components
-    double q_x = quaternion(0);
-    double q_y = quaternion(1);
-    double q_z = quaternion(2);
-    double q_w = quaternion(3);  // Last element is q_w
+Mat4x3 TOP::CalculateQMat(const Eigen::Quaterniond& quaternion) {
+  // Extract quaternion components
+  double q_x = quaternion.x();
+  double q_y = quaternion.y();
+  double q_z = quaternion.z();
+  double q_w = quaternion.w();
 
-    // Construct Q_mat
-    Mat4x3 Q_mat;
-    // Q_mat << -q_x, -q_y, -q_z,
-    //           q_w, -q_z,  q_y,
-    //           q_z,  q_w, -q_x,
-    //          -q_y,  q_x,  q_w;
+  Mat4x3 Q_mat;
+  std::string frame = "body";  // "body" or "fixed"
+
+  if (frame == "fixed") {
+    // Construct ET matrix from equation 16 in https://arxiv.org/pdf/0811.2889
+    // Mat4x3 E_T_mat;
+    // E_T_mat << -q_x, -q_y, -q_z,
+    //            q_w, q_z,  -q_y,
+    //            -q_z,  q_w, q_x,
+    //            q_y,  -q_x,  q_w;
+    // This produces \dot{q} = 0.5 * E_T_mat * omega = \dot{q_0, q_1, q_2, q_3}
+    // We want \dot{q_1, q_2, q_3, q_0}
+    // Thefore, the matrix is:
     Q_mat <<  q_w,  q_z, -q_y,
-             -q_z,  q_w,  q_x,
+              -q_z,  q_w,  q_x,
               q_y, -q_x,  q_w,
-             -q_x, -q_y, -q_z;
+              -q_x, -q_y, -q_z;
+  } else if (frame == "body") {
+    // In body frame
+    // Construct GT matrix from equation 18 in https://arxiv.org/pdf/0811.2889
+    // Mat4x3 G_T_mat;
+    // G_T_mat << -q_x, -q_y, -q_z,
+    //            q_w, -q_z,  q_y,
+    //            q_z,  q_w, -q_x,
+    //            -q_y,  q_x,  q_w;
+    // This produces \dot{q} = 0.5 * G_T_mat * omega' = \dot{q_0, q_1, q_2, q_3}
+    // We want \dot{q_1, q_2, q_3, q_0}
+    // Thefore, the matrix is:
+    Q_mat <<  q_w,  -q_z, -q_y,
+              q_z,  q_w,  -q_x,
+              -q_y, q_x,  q_w,
+              -q_x, -q_y, -q_z;
+  }
 
-    return Q_mat;
+  return Q_mat;
 }
 
 void TOP::SetSimpleConstraints() {
@@ -740,9 +763,10 @@ void TOP::SetSimpleConstraints() {
     NormalizeQuaternions();
     for (size_t ii = 0; ii < N - 1; ii++) {
       // Quaternion kinematics update
+      // Equation 29 in https://arxiv.org/pdf/0811.2889
       // Quaternion update: q_{i+1} = q_i + 0.5 * Q(q_i) * omega_i * dt
       // Compute QMat dynamically for quaternion at time step `ii`
-      Eigen::Vector4d q_i = Xprev[ii].segment(6, 4);
+      Eigen::Quaterniond q_i(Xprev[ii](9), Xprev[ii](6), Xprev[ii](7), Xprev[ii](8));
       Eigen::Matrix<double, 4, 3> QMat = CalculateQMat(q_i);
       for (size_t jj = 0; jj < 4; jj++) {
         for (size_t kk = 0; kk < 3; kk++) {
