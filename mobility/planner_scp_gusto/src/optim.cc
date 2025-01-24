@@ -2847,14 +2847,14 @@ std::tuple<scp::Vec13Vec, scp::Vec13Vec> initializeMotionCases(bool is_granite, 
   scp::Vec13 x0;
   scp::Vec13 xg;
 
-  bool single_x0 = false;  // true --> single x0, multiple xg. false --> multiple x0, multiple xg.
+  std::string case_mode = "nearby";  // "nearby" or "single_x0" or "multiple_x0"
 
   if (nn_training_mode) {
     if (is_granite) {
       throw std::runtime_error("Granite case not supported for NN training.");
       return std::make_tuple(x0s, xgs);
     } else {
-      if (single_x0) {
+      if (case_mode == "single_x0") {
         // Simple cases for ISS
         // x0 is 10.28, -9.81, 4.30, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
         x0 << 10.28, -9.81, 4.30, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
@@ -2877,7 +2877,28 @@ std::tuple<scp::Vec13Vec, scp::Vec13Vec> initializeMotionCases(bool is_granite, 
           x0s.push_back(x0);
         }
         return std::make_tuple(x0s, xgs);
-      } else {
+      } else if (case_mode == "nearby") {
+        std::cout << "Initializing nearby cases for ISS." << std::endl;
+        // Nearby cases for ISS
+        // x0 is 10.8, -9.5, 4.8, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+        float xi = 10.8;
+        float yi = -9.5;
+        float zi = 4.8;
+        x0 << xi, yi, zi, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+        // Cases with motion within ISS bounds
+        for (float xf = 10.8; xf <= 11.0; xf += 0.1) {
+          for (float yf = -9.5; yf <= -9.4; yf += 0.1) {
+            for (float zf = 4.3; zf <= 4.6; zf += 0.1) {
+              xg << xf, yf, zf, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+              xgs.push_back(xg);
+            }
+          }
+        }
+        for (size_t i = 0; i < xgs.size(); ++i) {
+          x0s.push_back(x0);
+        }
+        return std::make_tuple(x0s, xgs);
+      } else if (case_mode == "multiple_x0") {
         scp::Vec3 pos_min_(10.28, -9.81, 4.30);
         scp::Vec3 pos_max_(11.28, -8.81, 5.30);
         scp::decimal_t spacing = 0.2;
@@ -2995,40 +3016,59 @@ std::tuple<scp::Vec13Vec, scp::Vec13Vec> initializeMotionCases(bool is_granite, 
 }
 
 // Function to process a single problem instance
-void processProblemInstance(scp::TOP& top_eg, const scp::Vec13& x0, const scp::Vec13& xg,
+bool processProblemInstance(scp::TOP& top_eg, const scp::Vec13& x0, const scp::Vec13& xg,
                             const Eigen::AlignedBox3d& vbox, int problemIndex) {
   top_eg.x0 = x0;
   top_eg.xg = xg;
-  clearToZeros(top_eg.Xprev);
-  clearToZeros(top_eg.Uprev);
+  // clearToZeros(top_eg.Xprev);
+  // clearToZeros(top_eg.Uprev);
   top_eg.save_constraints_to_file = false;
   top_eg.save_trajectory_to_file = false;
 
-  if (top_eg.is_granite) {
-    if (vbox.isEmpty()) {
-        top_eg.keep_out_zones_.clear();
+  std::cout << "Checking for vbox..." << std::endl;
+
+  if (!(vbox.isEmpty())) {
+    std::cout << "vbox is not empty..." << std::endl;
+    if ((top_eg.keep_out_zones_.size() == 0) || (!((top_eg.keep_out_zones_.back().min() == vbox.min()) &&
+                                                   (top_eg.keep_out_zones_.back().max() == vbox.max())))) {
+      std::cout << "Adding vbox..." << std::endl;
+      top_eg.keep_out_zones_.push_back(vbox);
+      std::cout << "Added vbox to keep_out_zones_" << std::endl;
     } else {
-        top_eg.keep_out_zones_.clear();
-        top_eg.keep_out_zones_.push_back(vbox);
+      std::cout << "vbox already exists in keep_out_zones_" << std::endl;
     }
   } else {
-    std::cout << "Number of obstacles: " << top_eg.keep_out_zones_.size() << std::endl;
+    std::cout << "vbox is empty..." << std::endl;
     top_eg.keep_out_zones_.clear();
-    top_eg.keep_out_zones_.push_back(vbox);
-    std::cout << "After adding 1, Number of obstacles: " << top_eg.keep_out_zones_.size() << std::endl;
   }
+
+  // if (top_eg.is_granite) {
+  //   if (vbox.isEmpty()) {
+  //       top_eg.keep_out_zones_.clear();
+  //   } else {
+  //       top_eg.keep_out_zones_.clear();
+  //       top_eg.keep_out_zones_.push_back(vbox);
+  //   }
+  // } else {
+  //   std::cout << "Number of obstacles: " << top_eg.keep_out_zones_.size() << std::endl;
+  //   top_eg.keep_out_zones_.clear();
+  //   top_eg.keep_out_zones_.push_back(vbox);
+  //   std::cout << "After adding 1, Number of obstacles: " << top_eg.keep_out_zones_.size() << std::endl;
+  // }
 
   if (!top_eg.Solve()) {
     std::cout << "Failure: Problem " << problemIndex << " could not be solved!" << std::endl;
     std::cout << "--------------------------------------------" << std::endl;
-    top_eg.WriteTrajectoryToFile("output_" + std::to_string(problemIndex), /*include_timestamp=*/ false);
-    return;
+    if (!(top_eg.nn_training_mode)) {
+      top_eg.WriteTrajectoryToFile("output_" + std::to_string(problemIndex), /*include_timestamp=*/ false);
+    }
+    return false;
   }
 
   std::cout << "Success: Problem " << problemIndex << " solved!" << std::endl;
   std::cout << "--------------------------------------------" << std::endl;
   top_eg.WriteTrajectoryToFile("output_" + std::to_string(problemIndex), /*include_timestamp=*/ false);
-  return;
+  return true;
 }
 
 void debugObsAvoidance() {
@@ -3123,13 +3163,13 @@ int main() {
   bool test_granite_no_obs = false;
   bool test_granite_large_obs = false;
   bool test_granite_small_obs = false;
-  bool test_iss_no_obs = true;
-  bool test_iss_small_obs = true;
+  bool test_iss_no_obs = false;
+  bool test_iss_small_obs = false;
   bool test_iss_large_obs = false;
 
   bool test_debug_obs_avoidance = false;
 
-  bool create_training_data = false;
+  bool create_training_data = true;
   bool train_and_save_model = false;
   bool load_and_run_inference = false;
   bool test_warm_start = false;
@@ -3250,20 +3290,34 @@ int main() {
   }
 
   if (create_training_data) {
-    scp::TOP top(20., 801);
+    std::cout << "Creating training data..." << std::endl;
+    scp::TOP top(20., 401);
     top.is_granite = false;
-    top.enforce_obs_avoidance_const = false;
+    top.enforce_obs_avoidance_const = true;
     top.nn_training_mode = true;
+    // top.max_iter_solver_ = 2000;
+
+    Eigen::AlignedBox3d smallObstacle;
+    smallObstacle.extend(Eigen::Vector3d(10.2, -9.2, 4.6));
+    smallObstacle.extend(Eigen::Vector3d(10.3, -9.0, 4.8));
 
     // Initialize motion cases
     scp::Vec13Vec x0s, xgs;
+    std::cout << "Initializing motion cases..." << std::endl;
     std::tie(x0s, xgs) = initializeMotionCases(top.is_granite, /* nn_training_mode= */ top.nn_training_mode);
+    std::cout << "Number of motion cases: " << xgs.size() << std::endl;
 
     // Process problems
+    std::cout << "Processing problems..." << std::endl;
+    int num_successes = 0;
     for (size_t i = 0; i < xgs.size(); ++i) {
       num_problems++;
-      processProblemInstance(top, x0s[i], xgs[i], Eigen::AlignedBox3d(), num_problems);
+      bool status = processProblemInstance(top, x0s[i], xgs[i], smallObstacle, num_problems);
+      if (status) {
+        num_successes++;
+      }
     }
+    std::cout << "Number of successful problems: " << num_successes << " out of " << num_problems << std::endl;
   }
 
   if (train_and_save_model) {
