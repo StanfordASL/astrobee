@@ -3169,7 +3169,7 @@ int main() {
 
   bool test_debug_obs_avoidance = false;
 
-  bool create_training_data = true;
+  bool create_training_data = false;
   bool train_and_save_model = false;
   bool load_and_run_inference = false;
   bool test_warm_start = false;
@@ -3505,6 +3505,32 @@ int main() {
     }
     std::cout << "--------------------------------------------" << std::endl;
   }
+
+  scp::TOP* top;
+  top = new scp::TOP(20., 401);
+  top->use_nn_warm_start = false;
+  top->is_granite = true;
+  top->x0 << -0.390941, 0.385616, -0.678817, 0, 0, 0, -0.00158839, 0.00167167, -0.00057889, 0.999997, 0, 0, 0;
+  top->xg << 0.5, -0.3, -0.67, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+
+  top->radius_ = 0.26;
+  top->mass = 18.9715;
+  top->J << 0.2517, 0.0, 0.0,
+            0.0, 0.2517, 0.0,
+            0.0, 0.0, 0.0025;
+  top->Jinv = top->J.inverse();
+
+  Eigen::AlignedBox3d smallObstacle;
+  smallObstacle.extend(Eigen::Vector3d(-0.25, 0., -2));
+  smallObstacle.extend(Eigen::Vector3d(0., -0.25, 0));
+  top->keep_out_zones_.push_back(smallObstacle);
+
+  if (!top->Solve()) {
+    std::cout << "Problem could not be solved!" << std::endl;
+  } else {
+    std::cout << "Problem solved!" << std::endl;
+  }
+  std::cout << "--------------------------------------------" << std::endl;
 
   // scp::TOP* top;
   // top = new scp::TOP(20., 801);
