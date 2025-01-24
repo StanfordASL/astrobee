@@ -250,14 +250,14 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
 
     top->enforce_obs_avoidance_const = enforce_obs_avoidance_const_;
     top->is_granite = is_granite_;
-    if (top->is_granite) {
-      top->x_min(2) = -0.80;  // z coordinate
-      top->x_max(2) = -0.65;
-      top->x_min(6) = -0.05;  // qx
-      top->x_max(6) = 0.05;
-      top->x_min(7) = -0.05;  // qy
-      top->x_max(7) = 0.05;
-    }
+    // if (top->is_granite) {
+    //   top->x_min(2) = -0.80;  // z coordinate
+    //   top->x_max(2) = -0.65;
+    //   // top->x_min(6) = -0.05;  // qx
+    //   // top->x_max(6) = 0.05;
+    //   // top->x_min(7) = -0.05;  // qy
+    //   // top->x_max(7) = 0.05;
+    // }
     top->use_nn_warm_start = use_nn_warm_start_;
     top->nn_model_path = nn_model_path_;
     top->save_constraints_to_file = save_constraints_to_file_;
