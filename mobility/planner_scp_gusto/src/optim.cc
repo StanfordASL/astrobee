@@ -330,7 +330,7 @@ void TOP::UpdateProblemDimension(size_t N_) {
   rho_ = 0.3;  // default 0.1
   sigma_ = 1e-8;  // default 1e-06
   // max_iter_solver_ = 200;  // default 4000
-  max_iter_solver_ = 4000;  // default 4000
+  max_iter_solver_ = 8000;  // default 4000
   verbose_ = true;  // TODO(somrita): Change back to false
   warm_start_ = true;
   solver->settings()->setWarmStart(warm_start_);
