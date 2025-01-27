@@ -353,6 +353,8 @@ void TOP::UpdateProblemDimension(size_t N_) {
   solver->data()->setNumberOfVariables(num_vars);
   solver->data()->setNumberOfConstraints(num_cons);
 
+  // ValidateQPProblem(); // Slow, checks convexity
+
   // Dry run for initialization
   if (!solver->data()->setHessianMatrix(hessian)) {
     solver_ready_ = false;
@@ -1499,14 +1501,14 @@ bool TOP::Solve() {
 
     ValidationChecks();
 
-    if (save_trajectory_to_file) {
-      std::string fname = std::string((is_granite) ? "granite" : "iss") + "_optim_trajectory";
-      WriteTrajectoryToFile(fname);
-    }
-
     if (solved_) {
-      return true;
+      break;
     }
+  }
+
+  if (save_trajectory_to_file) {
+    std::string fname = std::string((is_granite) ? "granite" : "iss") + "_optim_trajectory";
+    WriteTrajectoryToFile(fname);
   }
 
   // if (SatisfiesStateInequalityConstraints()) {
@@ -1517,6 +1519,45 @@ bool TOP::Solve() {
   //   return false;
   // }
   return solved_;
+}
+
+// Function to check if a sparse matrix is positive semidefinite (PSD)
+bool TOP::IsPositiveSemidefinite(const SparseMatD& matrix) {
+  if (matrix.rows() != matrix.cols()) {
+    throw std::runtime_error("Matrix is not square.");
+  }
+  Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> eigen_solver(matrix.toDense());
+  return eigen_solver.eigenvalues().minCoeff() >= 0.0;
+}
+
+// Main validation logic
+void TOP::ValidateQPProblem() {
+  // Check if Hessian is square
+  if (hessian.rows() != hessian.cols()) {
+    throw std::runtime_error("Hessian matrix is not square.");
+  }
+
+  // Check if Hessian is positive semidefinite
+  if (!IsPositiveSemidefinite(hessian)) {
+    throw std::runtime_error("Hessian matrix is not positive semidefinite.");
+  }
+
+  // Check if bounds are valid
+  if (!((lower_bound.array() <= upper_bound.array()).all())) {
+    throw std::runtime_error("Bounds are invalid: lower_bound must be <= upper_bound.");
+  }
+
+  // Check if dimensions of the constraint matrix match the bounds
+  if (!(linear_con_mat.rows() == lower_bound.size() && linear_con_mat.rows() == upper_bound.size())) {
+    throw std::runtime_error("Linear constraints matrix dimensions do not match bounds.");
+  }
+
+  // Check if gradient vector matches the size of the Hessian
+  if (hessian.rows() != gradient.size()) {
+    throw std::runtime_error("Gradient vector size does not match the number of variables (Hessian dimension).");
+  }
+
+  std::cout << "All checks passed. The problem is well-posed and convex." << std::endl;
 }
 
 void TOP::ValidationChecks() {
@@ -3508,10 +3549,13 @@ int main() {
 
   scp::TOP* top;
   top = new scp::TOP(20., 401);
-  top->use_nn_warm_start = false;
   top->is_granite = true;
-  top->x0 << -0.390941, 0.385616, -0.678817, 0, 0, 0, -0.00158839, 0.00167167, -0.00057889, 0.999997, 0, 0, 0;
-  top->xg << 0.5, -0.3, -0.67, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+  top->enforce_obs_avoidance_const = true;
+  top->use_nn_warm_start = false;
+  // top->x0 << -0.390941, 0.385616, -0.678817, 0, 0, 0, -0.00158839, 0.00167167, -0.00057889, 0.999997, 0, 0, 0;
+  // top->xg << 0.5, -0.3, -0.67, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+  top->x0 << 0.302588, -0.274509, -0.674623, 0, 0, 0, -0.000435765, 0.0014564, -0.000290585, 0.999999, 0, 0, 0;
+  top->xg << 0.4, -0.3, -0.67, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
 
   top->radius_ = 0.26;
   top->mass = 18.9715;
@@ -3520,9 +3564,16 @@ int main() {
             0.0, 0.0, 0.0025;
   top->Jinv = top->J.inverse();
 
+  top->keep_in_zones_.clear();
+  Eigen::AlignedBox3d kiz;
+  kiz.extend(Eigen::Vector3d(-1, -1, -0.75));
+  kiz.extend(Eigen::Vector3d(1, 1, 0.6));
+
+  top->keep_out_zones_.clear();
+
   Eigen::AlignedBox3d smallObstacle;
-  smallObstacle.extend(Eigen::Vector3d(-0.25, 0., -2));
-  smallObstacle.extend(Eigen::Vector3d(0., -0.25, 0));
+  smallObstacle.extend(Eigen::Vector3d(-0.25, -0.25, -2));
+  smallObstacle.extend(Eigen::Vector3d(0., 0., 0));
   top->keep_out_zones_.push_back(smallObstacle);
 
   if (!top->Solve()) {

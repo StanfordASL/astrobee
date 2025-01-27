@@ -276,6 +276,8 @@ class TOP {
   bool Solve();
   void PolishSolution();
   void ValidationChecks();
+  bool IsPositiveSemidefinite(const SparseMatD& matrix);
+  void ValidateQPProblem();
   void NormalizeQuaternions();
   void WriteTrajectoryToFile(const std::string& fname, bool include_timestamp = true);
 
