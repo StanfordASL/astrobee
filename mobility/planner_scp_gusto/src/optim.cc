@@ -3216,6 +3216,7 @@ int main() {
   bool test_warm_start = false;
 
   bool test_state_bound_constraints = false;
+  bool test_obs_avoidance_translation = true;
 
   int num_problems = 0;
 
@@ -3547,41 +3548,54 @@ int main() {
     std::cout << "--------------------------------------------" << std::endl;
   }
 
-  scp::TOP* top;
-  top = new scp::TOP(20., 401);
-  top->is_granite = true;
-  top->enforce_obs_avoidance_const = true;
-  top->use_nn_warm_start = false;
-  // top->x0 << -0.390941, 0.385616, -0.678817, 0, 0, 0, -0.00158839, 0.00167167, -0.00057889, 0.999997, 0, 0, 0;
-  // top->xg << 0.5, -0.3, -0.67, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
-  top->x0 << 0.302588, -0.274509, -0.674623, 0, 0, 0, -0.000435765, 0.0014564, -0.000290585, 0.999999, 0, 0, 0;
-  top->xg << 0.4, -0.3, -0.67, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+  if (test_obs_avoidance_translation) {
+    std::vector<int> N_vals = {11, 201, 401, 401};
+    std::vector<bool> obs_avoids = {true, true, false, true};
+    for (size_t i = 0; i < N_vals.size(); ++i) {
+      int N = N_vals[i];
+      bool obs_avoid = obs_avoids[i];
 
-  top->radius_ = 0.26;
-  top->mass = 18.9715;
-  top->J << 0.2517, 0.0, 0.0,
-            0.0, 0.2517, 0.0,
-            0.0, 0.0, 0.0025;
-  top->Jinv = top->J.inverse();
+      scp::TOP* top;
+      top = new scp::TOP(20., N);
+      top->is_granite = true;
+      top->enforce_obs_avoidance_const = obs_avoid;
+      top->use_nn_warm_start = false;
+      // top->x0 << -0.390941, 0.385616, -0.678817, 0, 0, 0, -0.00158839, 0.00167167, -0.00057889, 0.999997, 0, 0, 0;
+      // top->xg << 0.5, -0.3, -0.67, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+      top->x0 << 0.302588, -0.274509, -0.674623, 0, 0, 0, -0.000435765, 0.0014564, -0.000290585, 0.999999, 0, 0, 0;
+      top->xg << 0.4, -0.3, -0.67, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
 
-  top->keep_in_zones_.clear();
-  Eigen::AlignedBox3d kiz;
-  kiz.extend(Eigen::Vector3d(-1, -1, -0.75));
-  kiz.extend(Eigen::Vector3d(1, 1, 0.6));
+      top->radius_ = 0.26;
+      top->mass = 18.9715;
+      top->J << 0.2517, 0.0, 0.0, 0.0, 0.2517, 0.0, 0.0, 0.0, 0.0025;
+      top->Jinv = top->J.inverse();
 
-  top->keep_out_zones_.clear();
+      top->keep_in_zones_.clear();
+      Eigen::AlignedBox3d kiz;
+      kiz.extend(Eigen::Vector3d(-1, -1, -0.75));
+      kiz.extend(Eigen::Vector3d(1, 1, -0.6));
+      top->keep_in_zones_.push_back(kiz);
 
-  Eigen::AlignedBox3d smallObstacle;
-  smallObstacle.extend(Eigen::Vector3d(-0.25, -0.25, -2));
-  smallObstacle.extend(Eigen::Vector3d(0., 0., 0));
-  top->keep_out_zones_.push_back(smallObstacle);
+      // Set the xmin and xmax using the keepin zones
+      for (size_t ii = 0; ii < 3; ii++) {
+        top->x_min(ii) = kiz.min()(ii);
+        top->x_max(ii) = kiz.max()(ii);
+      }
 
-  if (!top->Solve()) {
-    std::cout << "Problem could not be solved!" << std::endl;
-  } else {
-    std::cout << "Problem solved!" << std::endl;
+      top->keep_out_zones_.clear();
+      Eigen::AlignedBox3d smallObstacle;
+      smallObstacle.extend(Eigen::Vector3d(-0.25, -0.25, -2));
+      smallObstacle.extend(Eigen::Vector3d(0., 0., 0));
+      top->keep_out_zones_.push_back(smallObstacle);
+
+      if (!top->Solve()) {
+        std::cout << "Problem (with N = " << top->N << " could not be solved!" << std::endl;
+      } else {
+        std::cout << "Problem (with N = " << top->N << " solved!" << std::endl;
+      }
+      std::cout << "--------------------------------------------" << std::endl;
+    }
   }
-  std::cout << "--------------------------------------------" << std::endl;
 
   // scp::TOP* top;
   // top = new scp::TOP(20., 801);
