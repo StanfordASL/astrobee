@@ -2863,9 +2863,13 @@ std::string TOP::getCurrentTimestamp() {
   // Convert it to a time_t to work with std::strftime
   std::time_t now_time = std::chrono::system_clock::to_time_t(now);
 
-  // Convert to a string with a specific format (e.g., YYYY-MM-DD_HH-MM-SS)
+  // Get the milliseconds part
+  auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
+
+  // Convert to a string with a specific format (e.g., YYYY-MM-DD_HH-MM-SS_mmm)
   std::stringstream ss;
-  ss << std::put_time(std::localtime(&now_time), "%Y-%m-%d_%H-%M-%S");
+  ss << std::put_time(std::localtime(&now_time), "%Y-%m-%d_%H-%M-%S") << "_" << std::setw(3) << std::setfill('0')
+     << milliseconds.count();  // Add milliseconds
 
   return ss.str();
 }
