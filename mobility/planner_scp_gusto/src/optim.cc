@@ -182,14 +182,14 @@ size_t TOP::GetNumTOPConstraints() {
   size_t num_final_cond_constr = state_dim;
   size_t num_lin_dynamics_constr = state_dim_lin * (N - 1);   // (x,y,z) and (vx,vy,vz) for each time step
   size_t num_rot_dynamics_constr = state_dim_nlin * (N - 1);  // (q0,q1,q2,q3) and (wx,wy,wz) for each time step
-  size_t num_obs_avoidance_const = (N - 1) * pos_dim;               // Exactly 3 (XYZ) constraints per time step
+  size_t num_obs_avoidance_const = N * pos_dim;               // Exactly 3 (XYZ) constraints per time step
   size_t num_state_bounds_const = N * pos_dim;                      // 3 (XYZ) constraints per time step
   size_t num_total_constr = (enforce_init_cond ? num_init_cond_constr : 0) +
                            (enforce_final_cond ? num_final_cond_constr : 0) +
                            (enforce_lin_dynamics ? num_lin_dynamics_constr : 0) +
                            (enforce_rot_dynamics ? num_rot_dynamics_constr : 0) +
-                           (enforce_obs_avoidance_const ? num_obs_avoidance_const : 0) +
-                           (enforce_state_bounds ? num_state_bounds_const : 0);
+                          //  (enforce_obs_avoidance_const ? num_obs_avoidance_const : 0) +
+                           ((enforce_state_bounds || enforce_obs_avoidance_const) ? num_state_bounds_const : 0);
   if (enforce_force_norm || enforce_moment_norm || enforce_state_LB || enforce_state_UB || enforce_lin_vel_norm ||
       enforce_ang_vel_norm) {
     throw std::runtime_error("Error: Constraints not implemented yet!");
@@ -663,21 +663,6 @@ void TOP::SetSimpleConstraints() {
 
   auto start_time = std::chrono::high_resolution_clock::now();
 
-  if (enforce_state_bounds) {
-    for (size_t ii = 0; ii < N; ii++) {
-      for (size_t jj = 0; jj < 3; jj++) {  // x, y, z only for now
-        triplets.emplace_back(row_idx, state_dim*ii + jj, 1.0);
-        lower_bound(row_idx) = -20.0;
-        upper_bound(row_idx) = 20.0;
-        // lower_bound(row_idx) = MinPos()[jj];
-        // upper_bound(row_idx) = MaxPos()[jj];
-        // std::cout << "Setting state bounds for state " << ii << " dim " << jj << " to " << MinPos()[jj] << " and "
-        //           << MaxPos()[jj] << std::endl;
-        ++row_idx;
-      }
-    }
-  }
-
   // Initial state
   if (enforce_init_cond) {
     for (size_t ii = 0; ii < state_dim; ii++) {
@@ -1069,111 +1054,50 @@ void TOP::SetSimpleConstraints() {
     }
   }
 
-  if (enforce_obs_avoidance_const) {
-    if (keep_out_zones_.size() == 0) {
-      std::cout << "[TOP::SetSimpleConstraints] No keep out zones specified. Skipping obstacle avoidance constraints."
-                << std::endl;
-      return;
-    }
-    // if (keep_out_zones_.size() > 1) {
-    //   std::cout << "[TOP::SetSimpleConstraints] Can only account for 1 keep out zone currently. Found "
-    //             << std::to_string(keep_out_zones_.size()) << std::endl;
-    //   // throw std::runtime_error("Can only account for 1 keep out zone currently. Found " +
-    //   //                          std::to_string(keep_out_zones_.size()));
-    // }
-    // Eigen::AlignedBox3d box = keep_out_zones_[0];
-    Eigen::AlignedBox3d box = keep_out_zones_.back();
-    Eigen::Vector3d ko_min_original = box.min();
-    Eigen::Vector3d ko_max_original = box.max();
-    std::cout << "[TOP::SetSimpleConstraints] Virtual Keepout for Obs Avoidance: " << std::endl;
-    std::cout << "[TOP::SetSimpleConstraints] original ko_min: " << ko_min_original.transpose() << std::endl;
-    std::cout << "[TOP::SetSimpleConstraints] original ko_max: " << ko_max_original.transpose() << std::endl;
-    // Add buffer to obstacle
-    Eigen::Vector3d ko_min = ko_min_original - Eigen::Vector3d(obs_clearance, obs_clearance, obs_clearance);
-    Eigen::Vector3d ko_max = ko_max_original + Eigen::Vector3d(obs_clearance, obs_clearance, obs_clearance);
-
-    // Clip ko_min and ko_max to be within pose min and max
-    ko_min = ko_min.cwiseMax(MinPos());  // clip ko_min to be >= pose min
-    ko_max = ko_max.cwiseMin(MaxPos());  // clip ko_max to be <= pose max
-
-    std::cout << "[TOP::SetSimpleConstraints] pose min: " << MinPos().transpose() << std::endl;
-    std::cout << "[TOP::SetSimpleConstraints] pose max: " << MaxPos().transpose() << std::endl;
-
-    // Print updated ko_min and ko_max
-    std::cout << "[TOP::SetSimpleConstraints] ko_min: " << ko_min.transpose() << std::endl;
-    std::cout << "[TOP::SetSimpleConstraints] ko_max: " << ko_max.transpose() << std::endl;
-    Eigen::Vector3d ko_center = (ko_min + ko_max)/2;
-    std::cout << "[TOP::SetSimpleConstraints] ko_center: " << ko_center.transpose() << std::endl;
-    for (size_t ii = 0; ii < N-1; ii++) {
-      for (size_t jj = 0; jj < 3; jj++) {
+  if (enforce_state_bounds || enforce_obs_avoidance_const) {
+    for (size_t ii = 0; ii < N; ii++) {
+      for (size_t jj = 0; jj < 3; jj++) {  // x, y, z only for now
         decimal_t lb = MinPos()[jj];
         decimal_t ub = MaxPos()[jj];
-        // lb < x < ub
-        // Either ko_max < x < ub or lb < x < ko_min
-        bool active_proj = true;
-        for (size_t kk = 0; kk < 3; kk++) {
-          if (kk == jj) {
-            continue;
+
+        if (enforce_obs_avoidance_const) {
+          // Obstacle avoidance logic
+          Eigen::AlignedBox3d box = keep_out_zones_.back();
+          Eigen::Vector3d ko_min = box.min();
+          Eigen::Vector3d ko_max = box.max();
+
+          // Clip ko_min and ko_max to be within pose min and max
+          ko_min = ko_min.cwiseMax(MinPos());  // clip ko_min to be >= pose min
+          ko_max = ko_max.cwiseMin(MaxPos());  // clip ko_max to be <= pose max
+
+          Eigen::Vector3d ko_center = (ko_min + ko_max) / 2;
+
+          // Check if the current state needs an obstacle avoidance constraint
+          bool active_proj = true;
+          for (size_t kk = 0; kk < 3; kk++) {
+            if (kk == jj) continue;
+            if ((Xprev[ii](kk) > ko_max[kk]) || (Xprev[ii](kk) < ko_min[kk])) {
+              active_proj = false;
+              break;
+            }
           }
-          if ((Xprev[ii](kk) > ko_max[kk]) || (Xprev[ii](kk) < ko_min[kk])) {
-            // not active projection
-            active_proj = false;
-            // std::cout << "Seeing x y z " << std::to_string(Xprev[ii](0)) << ", " << std::to_string(Xprev[ii](1)) <<
-            // ", " << std::to_string(Xprev[ii](2)) << " and judging that no constraint is required." << std::endl;
-            break;
+
+          if (active_proj) {
+            if (Xprev[ii](jj) >= ko_center[jj]) {
+              lb = ko_max[jj];  // move lb to avoid obstacle
+            } else {
+              ub = ko_min[jj];  // move ub to avoid obstacle
+            }
           }
         }
-        if (active_proj) {
-          if (Xprev[ii](jj) >= ko_center[jj]) {
-            lb = ko_max[jj];
-          } else {
-            ub = ko_min[jj];
-          }
-          // std::cout << "Seeing x y z " << std::to_string(Xprev[ii](0)) << ", " << std::to_string(Xprev[ii](1)) << ",
-          // " << std::to_string(Xprev[ii](2)) << " and judging that " << std::to_string(jj) << " needs CONSTRAINT " <<
-          // std::to_string(lb) << ", " << std::to_string(ub) << "." << std::endl;
-        }
-        // lb < x < ub
-        triplets.emplace_back(row_idx, state_dim*ii + jj, 1.0);
+
+        // Add the combined constraint (whether it's from state bounds or obstacle avoidance)
+        triplets.emplace_back(row_idx, state_dim * ii + jj, 1.0);
         lower_bound(row_idx) = lb;
         upper_bound(row_idx) = ub;
         row_idx++;
       }
     }
-
-    // decimal_t ko_x_min = ko_min(0);
-    // decimal_t ko_x_max = ko_max(0);
-    // decimal_t ko_y_min = ko_min(1);
-    // decimal_t ko_y_max = ko_max(1);
-    // decimal_t ko_center_x = (ko_x_max + ko_x_min)/2;
-    // decimal_t ko_center_y = (ko_y_max + ko_y_min)/2;
-    // std::cout << "ko_center_x: " << ko_center_x << std::endl;
-    // std::cout << "ko_center_y: " << ko_center_y << std::endl;
-    // for (size_t ii = 0; ii < N-1; ii++) {
-    //   for (size_t kk = 0; kk < 2; kk++) {  // x and y
-    //     size_t d_slack_var_idx = state_dim*N+control_dim*(N-1)+
-    //     num_force_norm_slack_vars+num_moment_norm_slack_vars+
-    //     state_bd_dim*(N-1)+state_bd_dim*(N-1)+
-    //     (lin_vel_dim+1)*(N-1)+(ang_vel_dim+1)*(N-1)+2*ii+kk;
-    //     // -d_ik <= 0
-    //     linear_con_mat.coeffRef(row_idx, d_slack_var_idx) = -1.0;
-    //     upper_bound(row_idx) = 0;
-    //     row_idx++;
-    //     // Using prev, determine active constraints
-    //     decimal_t prev = Xprev[ii](kk);
-    //     if (prev > (ko_min(kk) + ko_max(kk)) / 2) {  // If x > ko_center_x, then -x + d_i <= -ko_x_max
-    //       linear_con_mat.coeffRef(row_idx, state_dim*(ii+1)+kk) = -1.0;
-    //       linear_con_mat.coeffRef(row_idx, d_slack_var_idx) = 1.0;
-    //       upper_bound(row_idx) = -ko_max(kk);
-    //       row_idx++;
-    //     } else {  // If x < ko_center_x, then x + d_i <= ko_x_min
-    //       linear_con_mat.coeffRef(row_idx, state_dim*(ii+1)+kk) = 1.0;
-    //       linear_con_mat.coeffRef(row_idx, d_slack_var_idx) = 1.0;
-    //       upper_bound(row_idx) = ko_min(kk);
-    //       row_idx++;
-    //     }
-    //   }
-    // }
   }
 
 
