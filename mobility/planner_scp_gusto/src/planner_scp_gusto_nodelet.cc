@@ -75,6 +75,13 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
   std::string nn_model_path_;
   bool save_constraints_to_file_;
   bool save_trajectory_to_file_;
+  double obs_min_x;
+  double obs_min_y;
+  double obs_min_z;
+  double obs_max_x;
+  double obs_max_y;
+  double obs_max_z;
+
   bool use_2d;            // true for granite table
   std::string flight_mode_;
   ros::NodeHandle *nh_;
@@ -108,10 +115,23 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
     N_ = cfg_.Get<int>("N");
     Tf_ = cfg_.Get<double>("Tf");
     slowdown_factor_ = cfg_.Get<int>("slowdown_factor");
+    obs_min_x = cfg_.Get<double>("obs_min_x");
+    obs_min_y = cfg_.Get<double>("obs_min_y");
+    obs_min_z = cfg_.Get<double>("obs_min_z");
+    obs_max_x = cfg_.Get<double>("obs_max_x");
+    obs_max_y = cfg_.Get<double>("obs_max_y");
+    obs_max_z = cfg_.Get<double>("obs_max_z");
     // Create a new optimization problem
     top = new scp::TOP(Tf_, N_);
     // Set config values to TOP for solve
     top->enforce_obs_avoidance_const = enforce_obs_avoidance_const_;
+    if (enforce_obs_avoidance_const_) {
+      // add custom virtual obstacle
+      Eigen::AlignedBox3d smallObstacle;
+      smallObstacle.extend(Eigen::Vector3d(obs_min_x, obs_min_y, obs_min_z));
+      smallObstacle.extend(Eigen::Vector3d(obs_max_x, obs_max_y, obs_max_z));
+      top->keep_out_zones_.push_back(smallObstacle);
+    }
     top->is_granite = is_granite_;
     top->use_nn_warm_start = use_nn_warm_start_;
     top->nn_model_path = nn_model_path_;
@@ -143,6 +163,12 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
     N_ = cfg_.Get<int>("N");
     Tf_ = cfg_.Get<double>("Tf");
     slowdown_factor_ = cfg_.Get<int>("slowdown_factor");
+    obs_min_x = cfg_.Get<double>("obs_min_x");
+    obs_min_y = cfg_.Get<double>("obs_min_y");
+    obs_min_z = cfg_.Get<double>("obs_min_z");
+    obs_max_x = cfg_.Get<double>("obs_max_x");
+    obs_max_y = cfg_.Get<double>("obs_max_y");
+    obs_max_z = cfg_.Get<double>("obs_max_z");
     return true;
   }
 
@@ -234,17 +260,10 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
     top->keep_in_zones_ = keep_in_zones_;
     if (enforce_obs_avoidance_const_) {
       // add custom virtual obstacle
-      if (is_granite_) {
-        Eigen::AlignedBox3d smallObstacle;
-        smallObstacle.extend(Eigen::Vector3d(-0.25, 0., -2));
-        smallObstacle.extend(Eigen::Vector3d(0., -0.25, 0));
-        keep_out_zones_.push_back(smallObstacle);
-      } else {
-        Eigen::AlignedBox3d smallObstacle;
-        smallObstacle.extend(Eigen::Vector3d(10.2, -9.3, 4.0));
-        smallObstacle.extend(Eigen::Vector3d(10.3, -8.8, 4.8));
-        keep_out_zones_.push_back(smallObstacle);
-      }
+      Eigen::AlignedBox3d smallObstacle;
+      smallObstacle.extend(Eigen::Vector3d(obs_min_x, obs_min_y, obs_min_z));
+      smallObstacle.extend(Eigen::Vector3d(obs_max_x, obs_max_y, obs_max_z));
+      keep_out_zones_.push_back(smallObstacle);
     }
     top->keep_out_zones_ = keep_out_zones_;
 
