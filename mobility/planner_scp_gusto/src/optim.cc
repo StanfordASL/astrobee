@@ -108,7 +108,7 @@ TOP::TOP(decimal_t Tf_, int N_)
   x0 << 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
   xg << 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
 
-  // TODO(acauligi): read off params server
+  // Defaults are ISS params (will be written by planner_scp_gusto_nodelet)
   radius_ = 0.26;
   mass = 9.583788668;
   J << 0.153427995, 0, 0,
@@ -1055,12 +1055,26 @@ void TOP::SetSimpleConstraints() {
   }
 
   if (enforce_state_bounds || enforce_obs_avoidance_const) {
+    if (enforce_state_bounds) {
+      std::cout << "[TOP::SetSimpleConstraints] MinPos: " << MinPos().transpose() << std::endl;
+      std::cout << "[TOP::SetSimpleConstraints] MaxPos: " << MaxPos().transpose() << std::endl;
+    }
+    if (enforce_obs_avoidance_const) {
+      if (keep_out_zones_.size() == 0) {
+        std::cout << "ERROR: No keep-out zones provided for obstacle avoidance constraints. Ignoring." << std::endl;
+      } else {
+        std::cout << "[TOP::SetSimpleConstraints] ko box min: " << keep_out_zones_.back().min().transpose()
+                  << std::endl;
+        std::cout << "[TOP::SetSimpleConstraints] ko box max: " << keep_out_zones_.back().max().transpose()
+                  << std::endl;
+      }
+    }
     for (size_t ii = 0; ii < N; ii++) {
       for (size_t jj = 0; jj < 3; jj++) {  // x, y, z only for now
         decimal_t lb = MinPos()[jj];
         decimal_t ub = MaxPos()[jj];
 
-        if (enforce_obs_avoidance_const) {
+        if (enforce_obs_avoidance_const && (keep_out_zones_.size() > 0) && (!is_granite || (jj != 2))) {
           // Obstacle avoidance logic
           Eigen::AlignedBox3d box = keep_out_zones_.back();
           Eigen::Vector3d ko_min = box.min();
@@ -3144,7 +3158,9 @@ int main() {
   bool test_warm_start = false;
 
   bool test_state_bound_constraints = false;
-  bool test_obs_avoidance_translation = true;
+  bool test_obs_avoidance_translation = false;
+
+  bool granite_obs_avoidance = true;
 
   int num_problems = 0;
 
@@ -3523,6 +3539,47 @@ int main() {
       }
       std::cout << "--------------------------------------------" << std::endl;
     }
+  }
+
+  if (granite_obs_avoidance) {
+    scp::TOP* top;
+    top = new scp::TOP(20., 401);
+    top->is_granite = true;
+    top->enforce_obs_avoidance_const = true;
+    top->use_nn_warm_start = false;
+    top->x0 << -0.3, 0.3, -0.67, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+    top->xg << 0.2, -0.3, -0.67, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+    if (top->is_granite) {
+      top->radius_ = 0.26;
+      top->mass = 18.9715;
+      top->J << 0.2517, 0.0, 0.0, 0.0, 0.2517, 0.0, 0.0, 0.0, 0.2517;
+      top->Jinv = top->J.inverse();
+
+      Eigen::AlignedBox3d kiz;
+      kiz.extend(Eigen::Vector3d(-1, -1, -0.75));
+      kiz.extend(Eigen::Vector3d(1, 1, -0.6));
+      top->keep_in_zones_.push_back(kiz);
+
+      top->x_min(0) = -1.0;
+      top->x_max(0) = 1.0;
+      top->x_min(1) = -1.0;
+      top->x_max(1) = 1.0;
+      top->x_min(2) = -0.75;
+      top->x_max(2) = -0.6;
+    }
+
+    Eigen::AlignedBox3d smallObstacle;
+    smallObstacle.extend(Eigen::Vector3d(-0.25, -0.25, -2));
+    smallObstacle.extend(Eigen::Vector3d(0., 0., 0));
+    top->keep_out_zones_.push_back(smallObstacle);
+
+    if (!top->Solve()) {
+      std::cout << "Problem could not be solved!" << std::endl;
+    } else {
+      std::cout << "Problem solved!" << std::endl;
+      top->WriteTrajectoryToFile("output_granite_obs_avoidance");
+    }
+    std::cout << "--------------------------------------------" << std::endl;
   }
 
   // scp::TOP* top;
