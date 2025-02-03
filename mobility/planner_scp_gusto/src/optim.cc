@@ -2688,6 +2688,9 @@ std::tuple<Vec6, Vec6> TOP::InferenceNN(Vec13 x0, Vec13 xg) {
 std::tuple<Vec4, Vec4, Vec4> TOP::InferenceNNSpline(Vec13 x0, Vec13 xg) {
   std::cout << "[TOP::InferenceNNSpline]" << std::endl;
 
+  std::cout << "[TOP::InferenceNNSpline] x0: " << x0.transpose() << std::endl;
+  std::cout << "[TOP::InferenceNNSpline] xg: " << xg.transpose() << std::endl;
+
   // Create input tensor of shape {1,6} from the first three coordinates of x0 and xg.
   torch::Tensor input = torch::zeros({1, 6});
   for (size_t i = 0; i < 3; ++i) {
@@ -2725,21 +2728,50 @@ std::tuple<Vec13Vec, Vec6Vec> TOP::WarmStartFromNN(Vec13 x0, Vec13 xg) {
     Uprev.push_back(Vec6::Zero());
     return std::make_tuple(Xprev, Uprev);
   }
-  // Call InferenceNN(x0, xg) to get U0, Uf
-  Vec6 U0, Uf;
-  std::tie(U0, Uf) = InferenceNN(x0, xg);
-  // Interpolate linearly for N steps to get Uprev
-  Vec6Vec Uprev;
-  for (size_t i = 0; i < N; ++i) {
-    Vec6 U = U0 + (i/(N-1))*(Uf - U0);
-    Uprev.push_back(U);
-  }
-  // Use dynamics to get Xprev
-  Vec13Vec Xprev;
-  Xprev.push_back(x0);
-  for (size_t i = 0; i < N; ++i) {
-    Vec13 X = ForwardDynamics(Xprev[i], Uprev[i]);
-    Xprev.push_back(X);
+  if (nn_spline_mode) {
+    // Get the spline coefficients from inference.
+    Vec4 coeff_x, coeff_y, coeff_z;
+    std::tie(coeff_x, coeff_y, coeff_z) = InferenceNNSpline(x0, xg);
+
+    // Create Xprev using the spline for x, y, and z and linear interpolation for the remaining state.
+    Vec13Vec X_inter;
+    for (size_t i = 0; i < N; ++i) {
+      double t = (N > 1) ? static_cast<double>(i) / (N - 1) : 0.0;
+      Vec13 X;
+
+      // Evaluate cubic splines for x, y, and z.
+      X(0) = coeff_x(0) + coeff_x(1) * t + coeff_x(2) * t * t + coeff_x(3) * t * t * t;
+      X(1) = coeff_y(0) + coeff_y(1) * t + coeff_y(2) * t * t + coeff_y(3) * t * t * t;
+      X(2) = coeff_z(0) + coeff_z(1) * t + coeff_z(2) * t * t + coeff_z(3) * t * t * t;
+
+      // For remaining state indices (3 to 12), linearly interpolate between x0 and xg.
+      for (int j = 3; j < 13; ++j) {
+        X(j) = x0(j) + (xg(j) - x0(j)) * t;
+      }
+      X_inter.push_back(X);
+    }
+    Xprev = X_inter;
+
+    // Initialize Uprev to all zeros.
+    Vec6Vec U_inter(N, Vec6::Zero());
+    Uprev = U_inter;
+  } else {
+    // Call InferenceNN(x0, xg) to get U0, Uf
+    Vec6 U0, Uf;
+    std::tie(U0, Uf) = InferenceNN(x0, xg);
+    // Interpolate linearly for N steps to get Uprev
+    Vec6Vec Uprev;
+    for (size_t i = 0; i < N; ++i) {
+      Vec6 U = U0 + (i/(N-1))*(Uf - U0);
+      Uprev.push_back(U);
+    }
+    // Use dynamics to get Xprev
+    Vec13Vec Xprev;
+    Xprev.push_back(x0);
+    for (size_t i = 0; i < N; ++i) {
+      Vec13 X = ForwardDynamics(Xprev[i], Uprev[i]);
+      Xprev.push_back(X);
+    }
   }
   return std::make_tuple(Xprev, Uprev);
 }
@@ -3371,9 +3403,10 @@ int main() {
 
   bool create_training_data = false;
   bool train_and_save_model = false;
-  bool train_and_save_model_spline = true;
+  bool train_and_save_model_spline = false;
   bool load_and_run_inference = false;
   bool test_warm_start = false;
+  bool test_warm_start_spline = true;
 
   bool test_state_bound_constraints = false;
   bool test_obs_avoidance_translation = false;
@@ -3691,6 +3724,77 @@ int main() {
       std::cout << "Cold start: Problem solved!" << std::endl;
       // TODO(somrita): Log number of iterations or time to solve and quality of solution
     }
+    if (!top_warm.Solve()) {
+      std::cout << "Warm start: Problem could not be solved!" << std::endl;
+    } else {
+      std::cout << "Warm start: Problem solved!" << std::endl;
+      // TODO(somrita): Log number of iterations or time to solve and quality of solution
+    }
+    std::cout << "--------------------------------------------" << std::endl;
+  }
+
+    if (test_warm_start_spline) {
+    // // Cold start with straight line initialization
+    // scp::TOP top_cold(20., 401);
+    // top_cold.use_nn_warm_start = false;
+
+    // Warm start from NN
+    scp::TOP top_warm(20., 401);
+    top_warm.use_nn_warm_start = true;
+    top_warm.nn_spline_mode = true;
+    top_warm.nn_model_path =
+      "/home/enceladus/astrobee/src/saved_NN_models/trained_model_625_2025-02-02_22-56-43_254.pt";
+
+    // Set common parameters
+    // top_cold.is_granite = false;
+    top_warm.is_granite = false;
+    // ISS params
+    // top_cold.radius_ = 0.26;
+    // top_cold.mass = 9.583788668;
+    // top_cold.J << 0.153427995, 0.0, 0.0, 0.0, 0.14271405, 0.0, 0.0, 0.0, 0.162302759;
+    // top_cold.Jinv = top_cold.J.inverse();
+    top_warm.radius_ = 0.26;
+    top_warm.mass = 9.583788668;
+    top_warm.J << 0.153427995, 0.0, 0.0, 0.0, 0.14271405, 0.0, 0.0, 0.0, 0.162302759;
+    top_warm.Jinv = top_warm.J.inverse();
+
+    // Obstacle avoidance constraints
+    // top_cold.enforce_obs_avoidance_const = true;
+    top_warm.enforce_obs_avoidance_const = true;
+    Eigen::AlignedBox3d smallObstacle;
+    smallObstacle.extend(Eigen::Vector3d(10.5, -9.5, 4.9));
+    smallObstacle.extend(Eigen::Vector3d(10.82, -9.2, 5.0));
+    // top_cold.keep_out_zones_.push_back(smallObstacle);
+    top_warm.keep_out_zones_.push_back(smallObstacle);
+
+    // Min max bounds
+    // top_cold.x_min(0) = 9.53589;
+    // top_cold.x_max(0) = 12.3359;
+    // top_cold.x_min(1) = -11.6365;
+    // top_cold.x_max(1) = -2.7532;
+    // top_cold.x_min(2) = 3.75059;
+    // top_cold.x_max(2) = 5.95059;
+    // Min max bounds
+    top_warm.x_min(0) = 9.53589;
+    top_warm.x_max(0) = 12.3359;
+    top_warm.x_min(1) = -11.6365;
+    top_warm.x_max(1) = -2.7532;
+    top_warm.x_min(2) = 3.75059;
+    top_warm.x_max(2) = 5.95059;
+
+    // Start and goal states
+    // top_cold.x0 << 10.8, -9.5, 4.8, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+    // top_cold.xg << 10.8, -9.0, 5.0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+    top_warm.x0 << 10.8, -9.5, 4.8, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+    top_warm.xg << 10.8, -9.0, 5.0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+
+    // // Solve problems
+    // if (!top_cold.Solve()) {
+    //   std::cout << "Cold start: Problem could not be solved!" << std::endl;
+    // } else {
+    //   std::cout << "Cold start: Problem solved!" << std::endl;
+    //   // TODO(somrita): Log number of iterations or time to solve and quality of solution
+    // }
     if (!top_warm.Solve()) {
       std::cout << "Warm start: Problem could not be solved!" << std::endl;
     } else {
