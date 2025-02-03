@@ -87,6 +87,28 @@ struct Net : torch::nn::Module {
   torch::nn::Linear fc1{nullptr}, fc2{nullptr}, fc3{nullptr};
 };
 
+struct SplineNet : torch::nn::Module {
+  SplineNet() {
+    fc1 = register_module("fc1", torch::nn::Linear(6, 128));
+    fc2 = register_module("fc2", torch::nn::Linear(128, 64));
+    fc3 = register_module("fc3", torch::nn::Linear(64, 12));
+  }
+  ~SplineNet() {
+    std::cout << "Destructor called for SplineNet object." << std::endl;
+  }
+
+  torch::Tensor forward(torch::Tensor x) {
+    x = torch::relu(fc1->forward(x));
+    x = torch::relu(fc2->forward(x));
+    x = fc3->forward(x);
+    return x;
+  }
+
+  // Use one of many "standard library" modules.
+  torch::nn::Linear fc1{nullptr}, fc2{nullptr}, fc3{nullptr};
+};
+
+
 class TOP {
  public:
   size_t state_dim;
@@ -285,11 +307,16 @@ class TOP {
   bool use_nn_warm_start;
   std::string nn_model_path;
   std::shared_ptr<Net> net;
+  std::shared_ptr<SplineNet> spline_net;
   torch::optim::Adam optimizer;
+  torch::optim::Adam spline_optimizer;
   void InitTrajWarmStart();
 
   // Mode to create training data
   bool nn_training_mode;
+
+  // Spline or regular neural network
+  bool nn_spline_mode;
 
   // Outputs folder
   std::string output_dir;
@@ -300,6 +327,9 @@ class TOP {
 
   // Function to read a single dataset file
   std::tuple<torch::Tensor, torch::Tensor> ReadData(const std::string& filename);
+
+  // Function to read a single dataset file and create inputs/outputs in spline format
+  std::tuple<torch::Tensor, torch::Tensor> ReadDataSpline(const std::string& filename);
 
   // Function to train the model
   void TrainModel(const std::vector<std::string>& files, int epochs);
@@ -314,6 +344,7 @@ class TOP {
 
   Vec13 ForwardDynamics(Vec13 x, Vec6 u);
   std::tuple<Vec6, Vec6> InferenceNN(Vec13 x0, Vec13 xg);
+  std::tuple<Vec4, Vec4, Vec4> InferenceNNSpline(Vec13 x0, Vec13 xg);
   std::tuple<Vec13Vec, Vec6Vec> WarmStartFromNN(Vec13 x0, Vec13 xg);
 };
 

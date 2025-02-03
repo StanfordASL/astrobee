@@ -40,7 +40,12 @@
 namespace scp {
 
 TOP::TOP(decimal_t Tf_, int N_)
-  : N(N_), Tf(Tf_), net(std::make_shared<Net>()), optimizer(net->parameters(), torch::optim::AdamOptions(0.001)) {
+    : N(N_),
+      Tf(Tf_),
+      net(std::make_shared<Net>()),
+      optimizer(net->parameters(), torch::optim::AdamOptions(0.001)),
+      spline_net(std::make_shared<SplineNet>()),
+      spline_optimizer(spline_net->parameters(), torch::optim::AdamOptions(0.001)) {
   std::cout << "TOP constructor called!" << std::endl;
   state_dim = 13;
   state_dim_lin = 6;
@@ -65,6 +70,8 @@ TOP::TOP(decimal_t Tf_, int N_)
 
   // Mode to create training data
   nn_training_mode = false;
+  // Spline or regular network
+  nn_spline_mode = false;
 
   // Folder to save outputs
   output_dir = "planner_scp_gusto_outputs";
@@ -413,46 +420,78 @@ void TOP::InitTrajStraightline() {
 void TOP::InitTrajWarmStart() {
   // Settings
   bool U_linear_only = true;
-  std::string Xinit_method = "linear_interpolation";  // "forward_dynamics" or "linear_interpolation"
+  std::string Xinit_method =
+    (nn_spline_mode ? "spline" : "linear_interpolation");  // "spline, "forward_dynamics" or "linear_interpolation"
 
   // Load model
   LoadModel(nn_model_path);
 
-  // Call InferenceNN(x0, xg) to get U0, Uf
-  Vec6 U0, Uf;
-  std::tie(U0, Uf) = InferenceNN(x0, xg);
-  // Interpolate linearly for N steps to get Uprev
-  Vec6Vec U_inter;
-  for (size_t i = 0; i < N; ++i) {
-    Vec6 U = U0 + (i/(N-1))*(Uf - U0);
-    if (U_linear_only) {
-      U(3) = 0.0;
-      U(4) = 0.0;
-      U(5) = 0.0;
-    }
-    U_inter.push_back(U);
-  }
-  Uprev = U_inter;
-
-  if (Xinit_method == "forward_dynamics") {
-    // Use dynamics to get Xprev
-    Vec13Vec X_inter;
-    X_inter.push_back(x0);
+  if (Xinit_method == "forward_dynamics" || Xinit_method == "linear_interpolation") {
+    // For these modes we call the regular InferenceNN that returns U0 and Uf.
+    // Call InferenceNN(x0, xg) to get U0, Uf
+    Vec6 U0, Uf;
+    std::tie(U0, Uf) = InferenceNN(x0, xg);
+    // Interpolate linearly for N steps to get Uprev
+    Vec6Vec U_inter;
     for (size_t i = 0; i < N; ++i) {
-      Vec13 X = ForwardDynamics(X_inter[i], Uprev[i]);
+      Vec6 U = U0 + (i/(N-1))*(Uf - U0);
+      if (U_linear_only) {
+        U(3) = 0.0;
+        U(4) = 0.0;
+        U(5) = 0.0;
+      }
+      U_inter.push_back(U);
+    }
+    Uprev = U_inter;
+
+    if (Xinit_method == "forward_dynamics") {
+      // Use dynamics to get Xprev
+      Vec13Vec X_inter;
+      X_inter.push_back(x0);
+      for (size_t i = 0; i < N; ++i) {
+        Vec13 X = ForwardDynamics(X_inter[i], Uprev[i]);
+        X_inter.push_back(X);
+      }
+      Xprev = X_inter;
+    } else if (Xinit_method == "linear_interpolation") {
+      // Linearly interpolate between x0 and xg
+      Vec13Vec X_inter;
+      for (size_t i = 0; i < N; i++) {
+        X_inter.push_back(x0 + (xg - x0) * i / (N - 1));
+      }
+      Xprev = X_inter;
+    }
+  } else if (Xinit_method == "spline") {
+    // Get the spline coefficients from inference.
+    Vec4 coeff_x, coeff_y, coeff_z;
+    std::tie(coeff_x, coeff_y, coeff_z) = InferenceNNSpline(x0, xg);
+
+    // Create Xprev using the spline for x, y, and z and linear interpolation for the remaining state.
+    Vec13Vec X_inter;
+    for (size_t i = 0; i < N; ++i) {
+      double t = (N > 1) ? static_cast<double>(i) / (N - 1) : 0.0;
+      Vec13 X;
+
+      // Evaluate cubic splines for x, y, and z.
+      X(0) = coeff_x(0) + coeff_x(1) * t + coeff_x(2) * t * t + coeff_x(3) * t * t * t;
+      X(1) = coeff_y(0) + coeff_y(1) * t + coeff_y(2) * t * t + coeff_y(3) * t * t * t;
+      X(2) = coeff_z(0) + coeff_z(1) * t + coeff_z(2) * t * t + coeff_z(3) * t * t * t;
+
+      // For remaining state indices (3 to 12), linearly interpolate between x0 and xg.
+      for (int j = 3; j < 13; ++j) {
+        X(j) = x0(j) + (xg(j) - x0(j)) * t;
+      }
       X_inter.push_back(X);
     }
     Xprev = X_inter;
-  } else if (Xinit_method == "linear_interpolation") {
-    // Linearly interpolate between x0 and xg
-    Vec13Vec X_inter;
-    for (size_t i = 0; i < N; i++) {
-      X_inter.push_back(x0 + (xg - x0) * i / (N - 1));
-    }
-    Xprev = X_inter;
+
+    // Initialize Uprev to all zeros.
+    Vec6Vec U_inter(N, Vec6::Zero());
+    Uprev = U_inter;
   }
+
   if (save_trajectory_to_file) {
-    std::string fname = std::string(is_granite ? "granite" : "iss") +"_initial_nn_warm_start_trajectory";
+    std::string fname = std::string(is_granite ? "granite" : "iss") + "_initial_nn_warm_start_trajectory";
     WriteTrajectoryToFile(fname);
   }
   return;
@@ -2646,6 +2685,32 @@ std::tuple<Vec6, Vec6> TOP::InferenceNN(Vec13 x0, Vec13 xg) {
   return std::make_tuple(U0, Uf);
 }
 
+std::tuple<Vec4, Vec4, Vec4> TOP::InferenceNNSpline(Vec13 x0, Vec13 xg) {
+  std::cout << "[TOP::InferenceNNSpline]" << std::endl;
+
+  // Create input tensor of shape {1,6} from the first three coordinates of x0 and xg.
+  torch::Tensor input = torch::zeros({1, 6});
+  for (size_t i = 0; i < 3; ++i) {
+    input[0][i] = x0[i];
+    input[0][i + 3] = xg[i];
+  }
+  std::cout << "[TOP::InferenceNNSpline] Input tensor: " << input << std::endl;
+
+  // Perform inference
+  spline_net->eval();
+  torch::Tensor output = spline_net->forward(input);
+  std::cout << "[TOP::InferenceNNSpline] Output tensor: " << output << std::endl;
+
+  // Extract spline coefficients from output (assumed shape {1,12}) and split them into three Vec4:
+  Vec4 coeff_x, coeff_y, coeff_z;
+  for (size_t i = 0; i < 4; ++i) {
+    coeff_x(i) = output[0][i].item<decimal_t>();
+    coeff_y(i) = output[0][i + 4].item<decimal_t>();
+    coeff_z(i) = output[0][i + 8].item<decimal_t>();
+  }
+  return std::make_tuple(coeff_x, coeff_y, coeff_z);
+}
+
 /* Function to warm start from neural network */
 std::tuple<Vec13Vec, Vec6Vec> TOP::WarmStartFromNN(Vec13 x0, Vec13 xg) {
   std::cout << "[TOP::WarmStartFromNN]" << std::endl;
@@ -2747,15 +2812,121 @@ std::tuple<torch::Tensor, torch::Tensor> TOP::ReadData(const std::string& filena
   return std::make_tuple(input_tensor, output_tensor);
 }
 
+std::tuple<torch::Tensor, torch::Tensor> TOP::ReadDataSpline(const std::string& filename) {
+  std::ifstream file(filename);
+  if (!file.is_open()) {
+    throw std::runtime_error("Unable to open file: " + filename);
+  }
+
+  std::string line;
+  // x0 and xg are now Eigen column vectors of size 13.
+  scp::Vec13 x0, xg;
+  scp::Vec13Vec Xprev;
+  int N;
+
+  // First line: Solved status
+  std::getline(file, line);
+  std::string solved = line.substr(8);
+
+  // Read x0 (next line)
+  std::getline(file, line);
+  std::istringstream iss(line);
+  for (int i = 0; i < 13; ++i) {
+    iss >> x0(i);
+  }
+
+  // Read xg (next line)
+  std::getline(file, line);
+  iss.clear();
+  iss.str(line);
+  for (int i = 0; i < 13; ++i) {
+    iss >> xg(i);
+  }
+
+  // Read N (next line)
+  std::getline(file, line);
+  N = std::stoi(line);
+
+  // Read Xprev: N lines, each with 13 values
+  for (int i = 0; i < N; ++i) {
+    std::getline(file, line);
+    std::istringstream iss_line(line);
+    scp::Vec13 vec;
+    for (int j = 0; j < 13; ++j) {
+      iss_line >> vec(j);
+    }
+    Xprev.push_back(vec);
+  }
+  file.close();
+
+  // ---------------------------
+  // Create input tensor (length 6) using only the first three coordinates from x0 and xg.
+  std::vector<float> input_vector;
+  for (int i = 0; i < 3; ++i) {
+    input_vector.push_back(static_cast<float>(x0(i)));
+  }
+  for (int i = 0; i < 3; ++i) {
+    input_vector.push_back(static_cast<float>(xg(i)));
+  }
+  torch::Tensor input_tensor = torch::from_blob(input_vector.data(), {1, 6}).clone();
+
+  // ---------------------------
+  // Fit cubic polynomials for x(t), y(t), and z(t)
+  // t is evenly spaced in [0,1]: t_i = i/(N-1)
+  Eigen::MatrixXd A(N, 4);
+  Eigen::VectorXd bx(N), by(N), bz(N);
+  for (int i = 0; i < N; ++i) {
+    double t = (N > 1) ? static_cast<double>(i) / (N - 1) : 0.0;
+    A(i, 0) = 1.0;
+    A(i, 1) = t;
+    A(i, 2) = t * t;
+    A(i, 3) = t * t * t;
+    // Extract x, y, z from Xprev (columns 0, 1, 2)
+    bx(i) = static_cast<double>(Xprev[i](0));
+    by(i) = static_cast<double>(Xprev[i](1));
+    bz(i) = static_cast<double>(Xprev[i](2));
+  }
+
+  // Solve for coefficients using least-squares: c = (AᵀA)⁻¹ Aᵀb
+  Eigen::Vector4d coeff_x = (A.transpose() * A).ldlt().solve(A.transpose() * bx);
+  Eigen::Vector4d coeff_y = (A.transpose() * A).ldlt().solve(A.transpose() * by);
+  Eigen::Vector4d coeff_z = (A.transpose() * A).ldlt().solve(A.transpose() * bz);
+
+  // Pack coefficients into a single vector: first x, then y, then z coefficients.
+  std::vector<float> output_vector;
+  for (int i = 0; i < 4; ++i) {
+    output_vector.push_back(static_cast<float>(coeff_x(i)));
+  }
+  for (int i = 0; i < 4; ++i) {
+    output_vector.push_back(static_cast<float>(coeff_y(i)));
+  }
+  for (int i = 0; i < 4; ++i) {
+    output_vector.push_back(static_cast<float>(coeff_z(i)));
+  }
+  // output_vector now has length 12
+
+  torch::Tensor output_tensor = torch::from_blob(output_vector.data(), {1, 12}).clone();
+
+  return std::make_tuple(input_tensor, output_tensor);
+}
+
 void TOP::TrainModel(const std::vector<std::string>& files, int epochs) {
+  std::cout << "Training model..." << std::endl;
   std::vector<torch::Tensor> inputs, outputs;
 
   // Read all data files
   for (const std::string& file : files) {
-    std::tuple<torch::Tensor, torch::Tensor> data = ReadData(file);
+    std::tuple<torch::Tensor, torch::Tensor> data;
+    if (nn_spline_mode) {
+      data = ReadDataSpline(file);
+    } else {
+      data = ReadData(file);
+    }
     inputs.push_back(std::get<0>(data));
     outputs.push_back(std::get<1>(data));
   }
+
+  std::cout << "Data loaded. Size of inputs: " << inputs.size() << ", size of outputs: " << outputs.size() << std::endl;
 
   // Concatenate tensors for batch training
   torch::Tensor input_tensor = torch::cat(inputs, 0);
@@ -2763,21 +2934,32 @@ void TOP::TrainModel(const std::vector<std::string>& files, int epochs) {
 
   // Training loop
   for (int epoch = 0; epoch < epochs; ++epoch) {
-    net->train();
-    optimizer.zero_grad();
-
-    torch::Tensor predictions = net->forward(input_tensor);
-    torch::Tensor loss = torch::mse_loss(predictions, output_tensor);
-
-    loss.backward();
-    optimizer.step();
-
-    std::cout << "Epoch [" << epoch + 1 << "/" << epochs << "], Loss: " << loss.item<float>() << std::endl;
+    if (nn_spline_mode) {
+      spline_net->train();
+      spline_optimizer.zero_grad();
+      torch::Tensor predictions = spline_net->forward(input_tensor);
+      torch::Tensor loss = torch::mse_loss(predictions, output_tensor);
+      loss.backward();
+      spline_optimizer.step();
+      std::cout << "Epoch [" << epoch + 1 << "/" << epochs << "], Loss: " << loss.item<float>() << std::endl;
+    } else {
+      net->train();
+      optimizer.zero_grad();
+      torch::Tensor predictions = net->forward(input_tensor);
+      torch::Tensor loss = torch::mse_loss(predictions, output_tensor);
+      loss.backward();
+      optimizer.step();
+      std::cout << "Epoch [" << epoch + 1 << "/" << epochs << "], Loss: " << loss.item<float>() << std::endl;
+    }
   }
 }
 
 void TOP::SaveModel(const std::string& model_path) {
-  torch::save(net, model_path);
+  if (nn_spline_mode) {
+    torch::save(spline_net, model_path);
+  } else {
+    torch::save(net, model_path);
+  }
   std::cout << "Model saved to " << model_path << std::endl;
 }
 
@@ -2790,7 +2972,11 @@ void TOP::LoadModel(const std::string& model_path) {
     std::cerr << "Error resolving path: " << strerror(errno) << std::endl;
     throw std::runtime_error("Error resolving path: " + std::string(strerror(errno)));
   }
-  torch::load(net, model_path);
+  if (nn_spline_mode) {
+    torch::load(spline_net, model_path);
+  } else {
+    torch::load(net, model_path);
+  }
   std::cout << "[TOP::LoadModel] Model successfully loaded from " << model_path << std::endl;
 }
 
@@ -3168,6 +3354,11 @@ void debugObsAvoidance() {
   }
 }
 
+bool fileExists(const std::string& filename) {
+  std::ifstream file(filename);
+  return file.good();  // Returns true if file can be opened
+}
+
 int main() {
   bool test_granite_no_obs = false;
   bool test_granite_large_obs = false;
@@ -3178,8 +3369,9 @@ int main() {
 
   bool test_debug_obs_avoidance = false;
 
-  bool create_training_data = true;
+  bool create_training_data = false;
   bool train_and_save_model = false;
+  bool train_and_save_model_spline = true;
   bool load_and_run_inference = false;
   bool test_warm_start = false;
 
@@ -3346,6 +3538,30 @@ int main() {
 
     std::string timestamp = top.getCurrentTimestamp();
     std::string filename = "saved_NN_models/trained_model_" + std::to_string(train_set_size) + "_" + timestamp + ".pt";
+    top.SaveModel(filename);
+  }
+
+  if (train_and_save_model_spline) {
+    scp::TOP top(20., 401);
+    top.is_granite = false;
+    top.nn_spline_mode = true;
+    top.nn_training_mode = true;
+    int num_epochs = 5000;
+    std::vector<std::string> files;
+    std::string directory_path = "/home/enceladus/astrobee/src/planner_scp_gusto_outputs/nn_training/";
+    int max_suffix = 890;
+    for (int i = 1; i <= max_suffix; i++) {
+      std::string pot_file = directory_path + "output_" + std::to_string(i) + ".txt";
+      if (fileExists(pot_file)) {
+        files.push_back(pot_file);
+      }
+    }
+    std::cout << "Number of files: " << files.size() << std::endl;
+
+    top.TrainModel(files, num_epochs);
+
+    std::string timestamp = top.getCurrentTimestamp();
+    std::string filename = "saved_NN_models/trained_model_" + std::to_string(files.size()) + "_" + timestamp + ".pt";
     top.SaveModel(filename);
   }
 
