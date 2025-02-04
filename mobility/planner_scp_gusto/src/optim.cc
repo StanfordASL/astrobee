@@ -2711,6 +2711,15 @@ std::tuple<Vec4, Vec4, Vec4> TOP::InferenceNNSpline(Vec13 x0, Vec13 xg) {
     coeff_y(i) = output[0][i + 4].item<decimal_t>();
     coeff_z(i) = output[0][i + 8].item<decimal_t>();
   }
+
+  // Reconstruct x0 and xg from the spline coefficients (for accuracy check)
+  Vec3 x0_reconstructed, xg_reconstructed;
+  x0_reconstructed << coeff_x(0), coeff_y(0), coeff_z(0);
+  xg_reconstructed << coeff_x(0) + coeff_x(1) + coeff_x(2) + coeff_x(3),
+    coeff_y(0) + coeff_y(1) + coeff_y(2) + coeff_y(3), coeff_z(0) + coeff_z(1) + coeff_z(2) + coeff_z(3);
+  std::cout << "[TOP::InferenceNNSpline] x0_reconstructed pose: " << x0_reconstructed.transpose() << std::endl;
+  std::cout << "[TOP::InferenceNNSpline] xg_reconstructed pose: " << xg_reconstructed.transpose() << std::endl;
+
   return std::make_tuple(coeff_x, coeff_y, coeff_z);
 }
 
@@ -3406,7 +3415,8 @@ int main() {
   bool train_and_save_model_spline = false;
   bool load_and_run_inference = false;
   bool test_warm_start = false;
-  bool test_warm_start_spline = true;
+  bool test_cold_start_spline = false;
+  bool test_warm_start_spline = false;
 
   bool test_state_bound_constraints = false;
   bool test_obs_avoidance_translation = false;
@@ -3579,7 +3589,7 @@ int main() {
     top.is_granite = false;
     top.nn_spline_mode = true;
     top.nn_training_mode = true;
-    int num_epochs = 5000;
+    int num_epochs = 500000;
     std::vector<std::string> files;
     std::string directory_path = "/home/enceladus/astrobee/src/planner_scp_gusto_outputs/nn_training/";
     int max_suffix = 890;
@@ -3733,75 +3743,86 @@ int main() {
     std::cout << "--------------------------------------------" << std::endl;
   }
 
-    if (test_warm_start_spline) {
-    // // Cold start with straight line initialization
-    // scp::TOP top_cold(20., 401);
-    // top_cold.use_nn_warm_start = false;
-
-    // Warm start from NN
-    scp::TOP top_warm(20., 401);
-    top_warm.use_nn_warm_start = true;
-    top_warm.nn_spline_mode = true;
-    top_warm.nn_model_path =
-      "/home/enceladus/astrobee/src/saved_NN_models/trained_model_625_2025-02-02_22-56-43_254.pt";
-
+  if (test_cold_start_spline || test_warm_start_spline) {
     // Set common parameters
-    // top_cold.is_granite = false;
-    top_warm.is_granite = false;
+    bool is_granite = false;
+    int N = 401;
+    double Tf = 20.0;
     // ISS params
-    // top_cold.radius_ = 0.26;
-    // top_cold.mass = 9.583788668;
-    // top_cold.J << 0.153427995, 0.0, 0.0, 0.0, 0.14271405, 0.0, 0.0, 0.0, 0.162302759;
-    // top_cold.Jinv = top_cold.J.inverse();
-    top_warm.radius_ = 0.26;
-    top_warm.mass = 9.583788668;
-    top_warm.J << 0.153427995, 0.0, 0.0, 0.0, 0.14271405, 0.0, 0.0, 0.0, 0.162302759;
-    top_warm.Jinv = top_warm.J.inverse();
-
-    // Obstacle avoidance constraints
-    // top_cold.enforce_obs_avoidance_const = true;
-    top_warm.enforce_obs_avoidance_const = true;
+    double radius = 0.26;
+    double mass = 9.583788668;
+    Eigen::Matrix3d J;
+    J << 0.153427995, 0.0, 0.0, 0.0, 0.14271405, 0.0, 0.0, 0.0, 0.162302759;
+    Eigen::Matrix3d Jinv = J.inverse();
+    // Create obstacle
     Eigen::AlignedBox3d smallObstacle;
     smallObstacle.extend(Eigen::Vector3d(10.5, -9.5, 4.9));
     smallObstacle.extend(Eigen::Vector3d(10.82, -9.2, 5.0));
-    // top_cold.keep_out_zones_.push_back(smallObstacle);
-    top_warm.keep_out_zones_.push_back(smallObstacle);
-
-    // Min max bounds
-    // top_cold.x_min(0) = 9.53589;
-    // top_cold.x_max(0) = 12.3359;
-    // top_cold.x_min(1) = -11.6365;
-    // top_cold.x_max(1) = -2.7532;
-    // top_cold.x_min(2) = 3.75059;
-    // top_cold.x_max(2) = 5.95059;
-    // Min max bounds
-    top_warm.x_min(0) = 9.53589;
-    top_warm.x_max(0) = 12.3359;
-    top_warm.x_min(1) = -11.6365;
-    top_warm.x_max(1) = -2.7532;
-    top_warm.x_min(2) = 3.75059;
-    top_warm.x_max(2) = 5.95059;
-
-    // Start and goal states
-    // top_cold.x0 << 10.8, -9.5, 4.8, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
-    // top_cold.xg << 10.8, -9.0, 5.0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
-    top_warm.x0 << 10.8, -9.5, 4.8, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
-    top_warm.xg << 10.8, -9.0, 5.0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
-
-    // // Solve problems
-    // if (!top_cold.Solve()) {
-    //   std::cout << "Cold start: Problem could not be solved!" << std::endl;
-    // } else {
-    //   std::cout << "Cold start: Problem solved!" << std::endl;
-    //   // TODO(somrita): Log number of iterations or time to solve and quality of solution
-    // }
-    if (!top_warm.Solve()) {
-      std::cout << "Warm start: Problem could not be solved!" << std::endl;
-    } else {
-      std::cout << "Warm start: Problem solved!" << std::endl;
-      // TODO(somrita): Log number of iterations or time to solve and quality of solution
+    // Set minmax bounds
+    Eigen::VectorXd x_min(3);
+    Eigen::VectorXd x_max(3);
+    x_min << 9.53589, -11.6365, 3.75059;
+    x_max << 12.3359, -2.7532, 5.95059;
+    // Set x0 and xg
+    Eigen::VectorXd x0(13);
+    Eigen::VectorXd xg(13);
+    x0 << 10.8, -9.4, 4.8, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+    xg << 10.9, -9.0, 5.0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0;
+    if (test_cold_start_spline) {
+      // Cold start with straight line initialization
+      scp::TOP top_cold(Tf, N);
+      top_cold.use_nn_warm_start = false;
+      top_cold.is_granite = is_granite;
+      top_cold.radius_ = radius;
+      top_cold.mass = mass;
+      top_cold.J = J;
+      top_cold.Jinv = Jinv;
+      top_cold.enforce_obs_avoidance_const = true;
+      top_cold.keep_out_zones_.push_back(smallObstacle);
+      for (int i = 0; i < 3; i++) {
+        top_cold.x_min(i) = x_min(i);
+        top_cold.x_max(i) = x_max(i);
+      }
+      top_cold.x0 = x0;
+      top_cold.xg = xg;
+      // Solve problems
+      if (!top_cold.Solve()) {
+        std::cout << "Cold start: Problem could not be solved!" << std::endl;
+      } else {
+        std::cout << "Cold start: Problem solved!" << std::endl;
+        // TODO(somrita): Log number of iterations or time to solve and quality of solution
+      }
+      std::cout << "--------------------------------------------" << std::endl;
     }
-    std::cout << "--------------------------------------------" << std::endl;
+    if (test_warm_start_spline) {
+      // Warm start from NN
+      scp::TOP top_warm(Tf, N);
+      top_warm.use_nn_warm_start = true;
+      top_warm.nn_spline_mode = true;
+      top_warm.nn_model_path =
+      "/home/enceladus/astrobee/src/saved_NN_models/trained_model_625_2025-02-03_00-50-21_003.pt";
+      top_warm.is_granite = is_granite;
+      top_warm.radius_ = radius;
+      top_warm.mass = mass;
+      top_warm.J = J;
+      top_warm.Jinv = Jinv;
+      top_warm.enforce_obs_avoidance_const = true;
+      top_warm.keep_out_zones_.push_back(smallObstacle);
+      for (int i = 0; i < 3; i++) {
+        top_warm.x_min(i) = x_min(i);
+        top_warm.x_max(i) = x_max(i);
+      }
+      top_warm.x0 = x0;
+      top_warm.xg = xg;
+      // Solve problems
+      if (!top_warm.Solve()) {
+        std::cout << "Warm start: Problem could not be solved!" << std::endl;
+      } else {
+        std::cout << "Warm start: Problem solved!" << std::endl;
+        // TODO(somrita): Log number of iterations or time to solve and quality of solution
+      }
+      std::cout << "--------------------------------------------" << std::endl;
+    }
   }
 
   if (test_state_bound_constraints) {
