@@ -141,6 +141,12 @@ class TOP {
   bool enforce_obs_avoidance_const;
   bool enforce_state_bounds;
 
+  bool enforce_lin_vel_limit;
+  bool enforce_ang_vel_limit;
+
+  decimal_t lin_vel_limit;
+  decimal_t ang_vel_limit;
+
   bool penalize_total_force;
   bool penalize_total_moment;
   size_t num_force_norm_slack_vars;
@@ -236,7 +242,7 @@ class TOP {
   ~TOP();
 
   size_t GetNumTOPVariables();
-  size_t GetNumTOPConstraints();
+  size_t GetNumTOPConstraints(bool verbose);
 
   Vec3 MinPos();
   Vec3 MaxPos();
@@ -306,6 +312,7 @@ class TOP {
   // Neural network for warm start
   bool use_nn_warm_start;
   std::string nn_model_path;
+  std::string nn_spline_model_path;
   std::shared_ptr<Net> net;
   std::shared_ptr<SplineNet> spline_net;
   torch::optim::Adam optimizer;
@@ -346,6 +353,8 @@ class TOP {
   std::tuple<Vec6, Vec6> InferenceNN(Vec13 x0, Vec13 xg);
   std::tuple<Vec4, Vec4, Vec4> InferenceNNSpline(Vec13 x0, Vec13 xg);
   std::tuple<Vec13Vec, Vec6Vec> WarmStartFromNN(Vec13 x0, Vec13 xg);
+
+  void printBoxHeader(const std::string& title, int width);
 };
 
 }  //  namespace scp

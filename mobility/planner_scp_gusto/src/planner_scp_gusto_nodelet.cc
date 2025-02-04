@@ -69,28 +69,60 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
   float control_rate_;    // Control frequency
   double max_time_;       // Max generation time
   double epsilon_;
-  bool enforce_obs_avoidance_const_;
-  bool is_granite_;
-  bool use_nn_warm_start_;
-  std::string nn_model_path_;
-  bool save_constraints_to_file_;
-  bool save_trajectory_to_file_;
+
+  scp::TOP* top;
+  bool is_granite;
+
+  // Solver params
+  uint N_;
+  double Tf_;
+  double abs_tol_;
+  double rel_tol_;
+  double primal_tol_;
+  double dual_tol_;
+  double rho_;
+  double sigma_;
+  uint max_iter_solver_;
+
+  // Constraints
+  bool enforce_rot_dynamics;
+  bool enforce_state_bounds;
+  bool enforce_obs_avoidance_const;
+  bool enforce_lin_vel_limit;
+  bool enforce_ang_vel_limit;
+
+  double lin_vel_limit;
+  double ang_vel_limit;
+
+  // Neural network params
+  bool use_nn_warm_start;
+  std::string nn_model_path;
+  bool nn_spline_mode;
+  std::string nn_spline_model_path;
+
+  // Saving to file
+  bool save_constraints_to_file;
+  bool save_trajectory_to_file;
+
+  // Virtual obstacle corners
   double obs_min_x;
   double obs_min_y;
   double obs_min_z;
   double obs_max_x;
   double obs_max_y;
   double obs_max_z;
+  double granite_obs_min_x;
+  double granite_obs_min_y;
+  double granite_obs_min_z;
+  double granite_obs_max_x;
+  double granite_obs_max_y;
+  double granite_obs_max_z;
+
+  uint slowdown_factor;  // for interpolation
 
   bool use_2d;            // true for granite table
   std::string flight_mode_;
   ros::NodeHandle *nh_;
-
-  uint N_;
-  double Tf_;
-  scp::TOP* top;
-
-  uint slowdown_factor_;  // for interpolation
 
  protected:
   bool InitializePlanner(ros::NodeHandle *nh) {
@@ -104,43 +136,110 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
         &PlannerSCPGustoNodelet::DiagnosticsCallback, this, false, true);
     // Save node handle
     nh_ = nh;
+
     // Get config values
     epsilon_ = cfg_.Get<double>("epsilon");
-    enforce_obs_avoidance_const_ = cfg_.Get<bool>("enforce_obs_avoidance_const");
-    is_granite_ = cfg_.Get<bool>("is_granite");
-    use_nn_warm_start_ = cfg_.Get<bool>("use_nn_warm_start");
-    nn_model_path_ = cfg_.Get<std::string>("nn_model_path");
-    save_constraints_to_file_ = cfg_.Get<bool>("save_constraints_to_file");
-    save_trajectory_to_file_ = cfg_.Get<bool>("save_trajectory_to_file");
+    is_granite = cfg_.Get<bool>("is_granite");
+
+    // Solver params
     N_ = cfg_.Get<int>("N");
     Tf_ = cfg_.Get<double>("Tf");
-    slowdown_factor_ = cfg_.Get<int>("slowdown_factor");
+    abs_tol_ = cfg_.Get<double>("abs_tol_");
+    rel_tol_ = cfg_.Get<double>("rel_tol_");
+    primal_tol_ = cfg_.Get<double>("primal_tol_");
+    dual_tol_ = cfg_.Get<double>("dual_tol_");
+    rho_ = cfg_.Get<double>("rho_");
+    sigma_ = cfg_.Get<double>("sigma_");
+    max_iter_solver_ = cfg_.Get<int>("max_iter_solver_");
+
+    // Constraints
+    enforce_rot_dynamics = cfg_.Get<bool>("enforce_rot_dynamics");
+    enforce_state_bounds = cfg_.Get<bool>("enforce_state_bounds");
+    enforce_obs_avoidance_const = cfg_.Get<bool>("enforce_obs_avoidance_const");
+    enforce_lin_vel_limit = cfg_.Get<bool>("enforce_lin_vel_limit");
+    enforce_ang_vel_limit = cfg_.Get<bool>("enforce_ang_vel_limit");
+
+    lin_vel_limit = cfg_.Get<double>("lin_vel_limit");
+    ang_vel_limit = cfg_.Get<double>("ang_vel_limit");
+
+    // Neural network params
+    use_nn_warm_start = cfg_.Get<bool>("use_nn_warm_start");
+    nn_model_path = cfg_.Get<std::string>("nn_model_path");
+    nn_spline_mode = cfg_.Get<bool>("nn_spline_mode");
+    nn_spline_model_path = cfg_.Get<std::string>("nn_spline_model_path");
+
+    // Saving to file
+    save_constraints_to_file = cfg_.Get<bool>("save_constraints_to_file");
+    save_trajectory_to_file = cfg_.Get<bool>("save_trajectory_to_file");
+
+    // Virtual obstacle corners
     obs_min_x = cfg_.Get<double>("obs_min_x");
     obs_min_y = cfg_.Get<double>("obs_min_y");
     obs_min_z = cfg_.Get<double>("obs_min_z");
     obs_max_x = cfg_.Get<double>("obs_max_x");
     obs_max_y = cfg_.Get<double>("obs_max_y");
     obs_max_z = cfg_.Get<double>("obs_max_z");
+
+    granite_obs_min_x = cfg_.Get<double>("granite_obs_min_x");
+    granite_obs_min_y = cfg_.Get<double>("granite_obs_min_y");
+    granite_obs_min_z = cfg_.Get<double>("granite_obs_min_z");
+    granite_obs_max_x = cfg_.Get<double>("granite_obs_max_x");
+    granite_obs_max_y = cfg_.Get<double>("granite_obs_max_y");
+    granite_obs_max_z = cfg_.Get<double>("granite_obs_max_z");
+
+    slowdown_factor = cfg_.Get<int>("slowdown_factor");
+
     // Create a new optimization problem
     top = new scp::TOP(Tf_, N_);
-    // Set config values to TOP for solve
-    top->enforce_obs_avoidance_const = enforce_obs_avoidance_const_;
-    if (enforce_obs_avoidance_const_) {
-      // add custom virtual obstacle
-      Eigen::AlignedBox3d smallObstacle;
-      smallObstacle.extend(Eigen::Vector3d(obs_min_x, obs_min_y, obs_min_z));
-      smallObstacle.extend(Eigen::Vector3d(obs_max_x, obs_max_y, obs_max_z));
-      top->keep_out_zones_.push_back(smallObstacle);
-    }
-    top->is_granite = is_granite_;
-    top->use_nn_warm_start = use_nn_warm_start_;
-    top->nn_model_path = nn_model_path_;
-    top->save_constraints_to_file = save_constraints_to_file_;
-    top->save_trajectory_to_file = save_trajectory_to_file_;
+    top->is_granite = is_granite;
+
+    // Set solver parameters
     top->N = N_;
     top->Tf = Tf_;
+    top->abs_tol_ = abs_tol_;
+    top->rel_tol_ = rel_tol_;
+    top->primal_tol_ = primal_tol_;
+    top->dual_tol_ = dual_tol_;
+    top->rho_ = rho_;
+    top->sigma_ = sigma_;
+    top->max_iter_solver_ = max_iter_solver_;
+
+    // Set constraints
+    top->enforce_rot_dynamics = enforce_rot_dynamics;
+    top->enforce_state_bounds = enforce_state_bounds;
+    top->enforce_lin_vel_limit = enforce_lin_vel_limit;
+    top->enforce_ang_vel_limit = enforce_ang_vel_limit;
+    top->enforce_obs_avoidance_const = enforce_obs_avoidance_const;
+    top->lin_vel_limit = lin_vel_limit;
+    top->ang_vel_limit = ang_vel_limit;
+
+    // Set neural network params
+    top->use_nn_warm_start = use_nn_warm_start;
+    top->nn_model_path = nn_model_path;
+    top->nn_spline_mode = nn_spline_mode;
+    top->nn_spline_model_path = nn_spline_model_path;
+
+    // Set saving to file
+    top->save_constraints_to_file = save_constraints_to_file;
+    top->save_trajectory_to_file = save_trajectory_to_file;
+
+    // Set custom virtual obstacle corners
+    if (enforce_obs_avoidance_const) {
+      top->keep_out_zones_.clear();
+      Eigen::AlignedBox3d smallObstacle;
+      if (is_granite) {
+        smallObstacle.extend(Eigen::Vector3d(granite_obs_min_x, granite_obs_min_y, granite_obs_min_z));
+        smallObstacle.extend(Eigen::Vector3d(granite_obs_max_x, granite_obs_max_y, granite_obs_max_z));
+      } else {
+        smallObstacle.extend(Eigen::Vector3d(obs_min_x, obs_min_y, obs_min_z));
+        smallObstacle.extend(Eigen::Vector3d(obs_max_x, obs_max_y, obs_max_z));
+      }
+      top->keep_out_zones_.push_back(smallObstacle);
+    }
+
     top->Solve();
-      // Notify initialization complete
+
+    // Notify initialization complete
     NODELET_DEBUG_STREAM("Initialization complete");
     // Success
     return true;
@@ -153,22 +252,59 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
   bool ReconfigureCallback(dynamic_reconfigure::Config &config) {
     if (!cfg_.Reconfigure(config))
       return false;
+
+    // Get config values
     epsilon_ = cfg_.Get<double>("epsilon");
-    enforce_obs_avoidance_const_ = cfg_.Get<bool>("enforce_obs_avoidance_const");
-    is_granite_ = cfg_.Get<bool>("is_granite");
-    use_nn_warm_start_ = cfg_.Get<bool>("use_nn_warm_start");
-    nn_model_path_ = cfg_.Get<std::string>("nn_model_path");
-    save_constraints_to_file_ = cfg_.Get<bool>("save_constraints_to_file");
-    save_trajectory_to_file_ = cfg_.Get<bool>("save_trajectory_to_file");
+    is_granite = cfg_.Get<bool>("is_granite");
+
+    // Solver params
     N_ = cfg_.Get<int>("N");
     Tf_ = cfg_.Get<double>("Tf");
-    slowdown_factor_ = cfg_.Get<int>("slowdown_factor");
+    abs_tol_ = cfg_.Get<double>("abs_tol_");
+    rel_tol_ = cfg_.Get<double>("rel_tol_");
+    primal_tol_ = cfg_.Get<double>("primal_tol_");
+    dual_tol_ = cfg_.Get<double>("dual_tol_");
+    rho_ = cfg_.Get<double>("rho_");
+    sigma_ = cfg_.Get<double>("sigma_");
+    max_iter_solver_ = cfg_.Get<int>("max_iter_solver_");
+
+    // Constraints
+    enforce_rot_dynamics = cfg_.Get<bool>("enforce_rot_dynamics");
+    enforce_state_bounds = cfg_.Get<bool>("enforce_state_bounds");
+    enforce_obs_avoidance_const = cfg_.Get<bool>("enforce_obs_avoidance_const");
+    enforce_lin_vel_limit = cfg_.Get<bool>("enforce_lin_vel_limit");
+    enforce_ang_vel_limit = cfg_.Get<bool>("enforce_ang_vel_limit");
+
+    lin_vel_limit = cfg_.Get<double>("lin_vel_limit");
+    ang_vel_limit = cfg_.Get<double>("ang_vel_limit");
+
+    // Neural network params
+    use_nn_warm_start = cfg_.Get<bool>("use_nn_warm_start");
+    nn_model_path = cfg_.Get<std::string>("nn_model_path");
+    nn_spline_mode = cfg_.Get<bool>("nn_spline_mode");
+    nn_spline_model_path = cfg_.Get<std::string>("nn_spline_model_path");
+
+    // Saving to file
+    save_constraints_to_file = cfg_.Get<bool>("save_constraints_to_file");
+    save_trajectory_to_file = cfg_.Get<bool>("save_trajectory_to_file");
+
+    // Virtual obstacle corners
     obs_min_x = cfg_.Get<double>("obs_min_x");
     obs_min_y = cfg_.Get<double>("obs_min_y");
     obs_min_z = cfg_.Get<double>("obs_min_z");
     obs_max_x = cfg_.Get<double>("obs_max_x");
     obs_max_y = cfg_.Get<double>("obs_max_y");
     obs_max_z = cfg_.Get<double>("obs_max_z");
+
+    granite_obs_min_x = cfg_.Get<double>("granite_obs_min_x");
+    granite_obs_min_y = cfg_.Get<double>("granite_obs_min_y");
+    granite_obs_min_z = cfg_.Get<double>("granite_obs_min_z");
+    granite_obs_max_x = cfg_.Get<double>("granite_obs_max_x");
+    granite_obs_max_y = cfg_.Get<double>("granite_obs_max_y");
+    granite_obs_max_z = cfg_.Get<double>("granite_obs_max_z");
+
+    slowdown_factor = cfg_.Get<int>("slowdown_factor");
+
     return true;
   }
 
@@ -183,6 +319,10 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
       PlanResult(plan_result);
       return;
     }
+
+    std::cout << "-----------------------------------------------------------------------" << std::endl;
+    std::cout << "-----------------------------------------------------------------------" << std::endl;
+    std::cout << "-----------------------------------------------------------------------" << std::endl;
 
     std::cout << "SCP::PlanCallback start " << states.front().pose.position << std::endl;
     std::cout << "SCP::PlanCallback goal " << states.back().pose.position << std::endl;
@@ -256,38 +396,61 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
               inertia_msg.inertia.ixz, inertia_msg.inertia.iyz, inertia_msg.inertia.izz;
     top->Jinv = top->J.inverse();
 
-    // pass keepin and keepout zones
+    // pass keepin zones
     top->keep_in_zones_ = keep_in_zones_;
-    if (enforce_obs_avoidance_const_) {
-      // add custom virtual obstacle
-      Eigen::AlignedBox3d smallObstacle;
-      smallObstacle.extend(Eigen::Vector3d(obs_min_x, obs_min_y, obs_min_z));
-      smallObstacle.extend(Eigen::Vector3d(obs_max_x, obs_max_y, obs_max_z));
-      keep_out_zones_.push_back(smallObstacle);
-    }
-    top->keep_out_zones_ = keep_out_zones_;
 
-    top->enforce_obs_avoidance_const = enforce_obs_avoidance_const_;
-    top->is_granite = is_granite_;
-    // // if (top->is_granite) {
-    // //   top->x_min(2) = -0.75;  // z coordinate
-    // //   top->x_max(2) = -0.60;
-    //   top->x_min(6) = -0.05;  // qx
-    //   top->x_max(6) = 0.05;
-    //   top->x_min(7) = -0.05;  // qy
-    //   top->x_max(7) = 0.05;
-    // // }
-    top->use_nn_warm_start = use_nn_warm_start_;
-    top->nn_model_path = nn_model_path_;
-    top->save_constraints_to_file = save_constraints_to_file_;
-    top->save_trajectory_to_file = save_trajectory_to_file_;
+    // pass parameters
+    top->is_granite = is_granite;
+
+    // Set solver parameters
     top->N = N_;
     top->Tf = Tf_;
-    std::cout << "PlannerSCPGusto: Called TOP with settings: " << std::endl;
-    std::cout << "enforce_obs_avoidance_const: " << top->enforce_obs_avoidance_const << std::endl;
-    std::cout << "is_granite: " << top->is_granite << std::endl;
-    std::cout << "use_nn_warm_start: " << top->use_nn_warm_start << std::endl;
-    std::cout << "nn_model_path: " << top->nn_model_path << std::endl;
+    top->abs_tol_ = abs_tol_;
+    top->rel_tol_ = rel_tol_;
+    top->primal_tol_ = primal_tol_;
+    top->dual_tol_ = dual_tol_;
+    top->rho_ = rho_;
+    top->sigma_ = sigma_;
+    top->max_iter_solver_ = max_iter_solver_;
+
+    // Set constraints
+    top->enforce_rot_dynamics = enforce_rot_dynamics;
+    top->enforce_state_bounds = enforce_state_bounds;
+    top->enforce_lin_vel_limit = enforce_lin_vel_limit;
+    top->enforce_ang_vel_limit = enforce_ang_vel_limit;
+    top->enforce_obs_avoidance_const = enforce_obs_avoidance_const;
+    top->lin_vel_limit = lin_vel_limit;
+    top->ang_vel_limit = ang_vel_limit;
+
+    // Set neural network params
+    top->use_nn_warm_start = use_nn_warm_start;
+    top->nn_model_path = nn_model_path;
+    top->nn_spline_mode = nn_spline_mode;
+    top->nn_spline_model_path = nn_spline_model_path;
+
+    // Set saving to file
+    top->save_constraints_to_file = save_constraints_to_file;
+    top->save_trajectory_to_file = save_trajectory_to_file;
+
+    // Set custom virtual obstacle corners
+    if (enforce_obs_avoidance_const) {
+      top->keep_out_zones_.clear();
+      Eigen::AlignedBox3d smallObstacle;
+      if (is_granite) {
+        smallObstacle.extend(Eigen::Vector3d(granite_obs_min_x, granite_obs_min_y, granite_obs_min_z));
+        smallObstacle.extend(Eigen::Vector3d(granite_obs_max_x, granite_obs_max_y, granite_obs_max_z));
+      } else {
+        smallObstacle.extend(Eigen::Vector3d(obs_min_x, obs_min_y, obs_min_z));
+        smallObstacle.extend(Eigen::Vector3d(obs_max_x, obs_max_y, obs_max_z));
+      }
+      top->keep_out_zones_.push_back(smallObstacle);
+    }
+
+    std::cout << "TOP settings: " << std::endl;
+    std::cout << "  is_granite: " << top->is_granite << std::endl;
+    std::cout << "  enforce_obs_avoidance_const: " << top->enforce_obs_avoidance_const << std::endl;
+    std::cout << "  use_nn_warm_start: " << top->use_nn_warm_start << std::endl;
+    std::cout << "  nn_spline_mode: " << top->nn_spline_mode << std::endl;
 
     /*
     if (candidate_Tf > top->Tf) {
@@ -322,6 +485,9 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
     } else {
       ROS_ERROR_STREAM("SCP::Planner failed to find solution!");
     }
+    std::cout << "-----------------------------------------------------------------------" << std::endl;
+    std::cout << "-----------------------------------------------------------------------" << std::endl;
+    std::cout << "-----------------------------------------------------------------------" << std::endl;
     PlanResult(plan_result);
   }
 
@@ -341,7 +507,7 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
   void sample_trajectory_with_interpolation(std::vector<ff_msgs::ControlState>* controls) {
     size_t N = top->N;
     scp::decimal_t dh = top->dh;
-    size_t slowdown = slowdown_factor_;  // slow down by this multiplier
+    size_t slowdown = slowdown_factor;  // slow down by this multiplier
 
     top->PolishSolution();  // ensure quaternions are normalized
 
@@ -419,18 +585,6 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
         controls->push_back(state);
       }
     }
-
-    // // Final state has 0 velocity and acceleration
-    // ff_msgs::ControlState state;
-    // state.when = ros::Time(dh*(N-1)*slowdown);
-    // state.pose.position.x = top->Xprev[N-1](0);
-    // state.pose.position.y = top->Xprev[N-1](1);
-    // state.pose.position.z = top->Xprev[N-1](2);
-    // state.pose.orientation.x = top->Xprev[N-1](6);
-    // state.pose.orientation.y = top->Xprev[N-1](7);
-    // state.pose.orientation.z = top->Xprev[N-1](8);
-    // state.pose.orientation.w = top->Xprev[N-1](9);
-    // controls->push_back(state);
 
     // Final state has 0 velocity and acceleration
     ff_msgs::ControlState state;
@@ -585,9 +739,10 @@ class PlannerSCPGustoNodelet : public planner::PlannerImplementation {
     std::cout << "# of keepout zones: " << keep_out_zones_.size() << std::endl;
 
     // Update position bds for solver
+    double padding = 0.01;
     for (size_t ii = 0; ii < 3; ii++) {
-      top->x_min(ii) = min(ii);
-      top->x_max(ii) = max(ii);
+      top->x_min(ii) = min(ii) + padding;
+      top->x_max(ii) = max(ii) - padding;
     }
 
     if (keep_in_zones_.size() == 0) {
